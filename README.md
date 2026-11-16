@@ -38,8 +38,8 @@ are prepared there, and are removed automatically.
 - **Admin printer selection**: all local printers are detected, but the owner
   chooses the one exposed to clients. Clients only ever see a friendly
   "Your printer" label; they never see real names, drivers, ports, or paths.
-- **Shared print PIN**: every print needs the PIN (`292929` by default). The
-  unlock lasts 30 minutes per session and is checked on the server.
+- **Shared print PIN**: every print needs the print PIN configured for the room.
+  The unlock lasts 30 minutes per session and is checked on the server.
 - **Hidden tray app**: `scripts/tray.ps1` supervises the Node backend from the
   Windows notification area, with restart supervision and logs. It can start
   automatically at sign-in.
@@ -73,7 +73,7 @@ Fill in at least:
 ```ini
 MARGIN_ADMIN_EMAIL=you@example.com
 MARGIN_ADMIN_PASSWORD=choose-a-strong-password
-MARGIN_PRINT_PIN=292929
+MARGIN_PRINT_PIN=123456
 ```
 
 If you leave `MARGIN_ADMIN_PASSWORD` blank, Margin generates one and saves it
@@ -99,8 +99,8 @@ seeing that person's documents.
 
 The PIN is a second gate in front of paper, separate from signing in.
 
-- Default: `292929`.
-- Change it with `MARGIN_PRINT_PIN` in `.env`, then restart the backend.
+- Set it with `MARGIN_PRINT_PIN` in `.env`, then restart the backend.
+- The example value is `123456`. Choose your own PIN and share it privately.
 - It is checked on the laptop, with rate limiting and a timing-safe comparison.
 - A correct PIN unlocks printing for that signed-in user for 30 minutes. Change
   the window with `MARGIN_PIN_UNLOCK_MINUTES`.

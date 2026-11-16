@@ -18,7 +18,7 @@ process.env.HOST = '127.0.0.1';
 process.env.MARGIN_ADMIN_EMAIL = 'admin@margin.test';
 process.env.MARGIN_ADMIN_NAME = 'Owner';
 process.env.MARGIN_ADMIN_PASSWORD = 'TestPassword123!';
-process.env.MARGIN_PRINT_PIN = '292929';
+process.env.MARGIN_PRINT_PIN = '123456';
 process.env.MARGIN_PROXY_SECRET = '';
 process.env.MARGIN_PUBLIC_ORIGIN = '';
 process.env.MARGIN_PUBLIC_API_URL = '';
@@ -208,7 +208,7 @@ async function runTests() {
   const goodPin = await request('/api/pin/verify', {
     method: 'POST',
     headers: { Cookie: adminCookie },
-    body: { pin: '292929' },
+    body: { pin: '123456' },
   });
   assert.equal(goodPin.status, 200);
   assert.equal(goodPin.json.verified, true);

@@ -160,7 +160,7 @@ export async function loadConfig() {
   const generatedAdminPassword = adminPassword ? '' : generatedPassword();
   const printPin = /^\d{4,12}$/.test(String(process.env.MARGIN_PRINT_PIN ?? '').trim())
     ? String(process.env.MARGIN_PRINT_PIN).trim()
-    : '292929';
+    : '123456';
   const printPinUnlockMinutes = parsePositiveInt(
     process.env.MARGIN_PIN_UNLOCK_MINUTES,
     30,
