@@ -127,6 +127,36 @@ function clientKey(req) {
   return req.ip || req.socket?.remoteAddress || 'unknown';
 }
 
+function isLocalHost(host) {
+  const value = String(host ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '');
+  if (!value) return false;
+  if (value === 'localhost' || value === '127.0.0.1' || value === '::1') {
+    return true;
+  }
+  const parts = value.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part))) {
+    return false;
+  }
+  return (
+    parts[0] === 10 ||
+    (parts[0] === 192 && parts[1] === 168) ||
+    (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+    (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+    parts[0] === 127
+  );
+}
+
+function requestHost(req) {
+  // Use the Host header, not a forwarded header: a client must not be able to
+  // claim it came from localhost just by adding a header to a tunnel request.
+  return String(req.get('host') ?? '')
+    .trim()
+    .replace(/:\d+$/, '');
+}
+
 function normalizeEmail(value) {
   return String(value ?? '').trim().toLowerCase();
 }
@@ -255,6 +285,13 @@ export function createSecurity({ config, users }) {
     // never passes through Vercel's request size limit. That one endpoint is
     // protected by a single-use upload token instead of the proxy secret.
     if (/^\/api\/uploads\/[^/]+$/.test(req.path)) {
+      next();
+      return;
+    }
+    // The owner also uses the laptop directly at localhost or over the home
+    // network. Those requests never traverse the tunnel, so the shared proxy
+    // secret is not present (and must never be exposed to a browser).
+    if (isLocalHost(requestHost(req))) {
       next();
       return;
     }

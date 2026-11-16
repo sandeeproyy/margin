@@ -1,20 +1,41 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "cleanUrls": true,
   "routes": [
     {
       "src": "^/api/(.*)$",
-      "headers": {
-        "x-margin-proxy": "${MARGIN_PROXY_SECRET}"
-      },
-      "dest": "${MARGIN_TUNNEL_URL}/api/$1"
+      "dest": "${MARGIN_TUNNEL_URL}/api/$1",
+      "env": ["MARGIN_TUNNEL_URL"],
+      "transforms": [
+        {
+          "type": "request.headers",
+          "op": "set",
+          "target": { "key": "x-margin-proxy" },
+          "args": "${MARGIN_PROXY_SECRET}",
+          "env": ["MARGIN_PROXY_SECRET"]
+        }
+      ]
     },
     {
       "handle": "filesystem"
-    },
+    }
+  ],
+  "headers": [
     {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' https:; frame-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        }
+      ]
     }
   ]
 }

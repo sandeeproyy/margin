@@ -2,7 +2,7 @@ param(
     [int]$Port = 3000
 )
 
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -11,89 +11,115 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $RootDir = Split-Path -Parent $ScriptDir
 $LogsDir = Join-Path $RootDir "logs"
 $LogFile = Join-Path $LogsDir "margin.log"
+$PreviousLogFile = Join-Path $LogsDir "margin.previous.log"
+$ErrorLogFile = Join-Path $LogsDir "margin-error.log"
 
 if (-not (Test-Path $LogsDir)) {
     New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
 }
 
-$Global:NodeProcess = $null
+$script:NodeProcess = $null
+$script:Stopping = $false
+$script:Mutex = $null
+
+function Write-MarginLog {
+    param([string]$Message)
+    try {
+        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        [System.IO.File]::AppendAllText(
+            $LogFile,
+            "[$timestamp] [tray] $Message`r`n",
+            [System.Text.Encoding]::UTF8
+        )
+    } catch {
+        # Logging must never stop the print room.
+    }
+}
+
+# Keep a single tray instance per Windows session.
+try {
+    $script:Mutex = New-Object System.Threading.Mutex($false, "Local\MarginTray")
+    $acquired = $false
+    try {
+        $acquired = $script:Mutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $acquired = $true
+    }
+    if (-not $acquired) {
+        exit 0
+    }
+} catch {
+    Write-MarginLog "Could not create the single-instance lock: $_"
+}
 
 function Start-MarginBackend {
-    if ($Global:NodeProcess -and -not $Global:NodeProcess.HasExited) {
-        return
+    if ($script:Stopping) { return $false }
+    if ($script:NodeProcess -and -not $script:NodeProcess.HasExited) {
+        return $true
     }
 
-    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    Add-Content -Path $LogFile -Value "[$timestamp] [tray] Starting Margin backend..."
+    if ($script:NodeProcess) {
+        try { $script:NodeProcess.Dispose() } catch {}
+        $script:NodeProcess = $null
+    }
 
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = "node.exe"
-    $startInfo.Arguments = "server/index.js"
-    $startInfo.WorkingDirectory = $RootDir
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-
-    $Global:NodeProcess = New-Object System.Diagnostics.Process
-    $Global:NodeProcess.StartInfo = $startInfo
-
-    # Event handlers for log redirection
-    Register-ObjectEvent -InputObject $Global:NodeProcess -EventName OutputDataReceived -Action {
-        if ($EventArgs.Data) {
-            Add-Content -Path $using:LogFile -Value $EventArgs.Data
-        }
-    } | Out-Null
-
-    Register-ObjectEvent -InputObject $Global:NodeProcess -EventName ErrorDataReceived -Action {
-        if ($EventArgs.Data) {
-            Add-Content -Path $using:LogFile -Value "[ERROR] $($EventArgs.Data)"
-        }
-    } | Out-Null
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    $nodePath = if ($nodeCommand) { $nodeCommand.Source } else { "node.exe" }
 
     try {
-        $started = $Global:NodeProcess.Start()
-        if ($started) {
-            $Global:NodeProcess.BeginOutputReadLine()
-            $Global:NodeProcess.BeginErrorReadLine()
-            Add-Content -Path $LogFile -Value "[$timestamp] [tray] Backend started with PID $($Global:NodeProcess.Id)"
-        } else {
-            Add-Content -Path $LogFile -Value "[$timestamp] [tray] Failed to start backend process."
+        if (Test-Path $LogFile) {
+            Copy-Item -LiteralPath $LogFile -Destination $PreviousLogFile -Force
         }
+        $process = Start-Process -FilePath $nodePath `
+            -ArgumentList "server/index.js" `
+            -WorkingDirectory $RootDir `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $LogFile `
+            -RedirectStandardError $ErrorLogFile `
+            -PassThru -ErrorAction Stop
+        $script:NodeProcess = $process
+        Write-MarginLog "Backend started with PID $($process.Id)."
+        return $true
     } catch {
-        Add-Content -Path $LogFile -Value "[$timestamp] [tray] Exception starting backend: $_"
+        Write-MarginLog "Backend could not start: $_"
+        return $false
     }
 }
 
 function Stop-MarginBackend {
-    if ($Global:NodeProcess -and -not $Global:NodeProcess.HasExited) {
-        $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-        Add-Content -Path $LogFile -Value "[$timestamp] [tray] Stopping backend (PID $($Global:NodeProcess.Id))..."
+    if ($script:NodeProcess) {
         try {
-            $Global:NodeProcess.Kill()
-            $Global:NodeProcess.WaitForExit(3000)
-        } catch {}
+            if (-not $script:NodeProcess.HasExited) {
+                Write-MarginLog "Stopping backend (PID $($script:NodeProcess.Id))."
+                $script:NodeProcess.Kill()
+                $script:NodeProcess.WaitForExit(3000) | Out-Null
+            }
+        } catch {
+            Write-MarginLog "Backend did not stop cleanly: $_"
+        }
+        try { $script:NodeProcess.Dispose() } catch {}
+        $script:NodeProcess = $null
     }
-    $Global:NodeProcess = $null
 }
 
 function Restart-MarginBackend {
     Stop-MarginBackend
     Start-Sleep -Milliseconds 800
-    Start-MarginBackend
-    $Global:NotifyIcon.ShowBalloonTip(3000, "Margin", "Margin print room restarted.", [System.Windows.Forms.ToolTipIcon]::Info)
+    if (Start-MarginBackend) {
+        $script:NotifyIcon.ShowBalloonTip(3000, "Margin", "The print room restarted.", [System.Windows.Forms.ToolTipIcon]::Info)
+    } else {
+        $script:NotifyIcon.ShowBalloonTip(5000, "Margin", "The print room could not restart. Open the logs to see why.", [System.Windows.Forms.ToolTipIcon]::Error)
+    }
 }
 
-# Create Tray Icon Bitmap (Vermillion square with registration cross)
+# Create the tray icon: vermillion disc with a registration cross.
 $iconBitmap = New-Object System.Drawing.Bitmap 32, 32
 $graphics = [System.Drawing.Graphics]::FromImage($iconBitmap)
 $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 
-# Background: warm vermillion circle
 $brushBg = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(239, 84, 47))
 $graphics.FillEllipse($brushBg, 2, 2, 28, 28)
 
-# Center registration mark: warm paper color
 $penMark = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(241, 237, 227)), 2
 $graphics.DrawLine($penMark, 16, 6, 16, 26)
 $graphics.DrawLine($penMark, 6, 16, 26, 16)
@@ -103,13 +129,11 @@ $graphics.Dispose()
 $iconHandle = $iconBitmap.GetHicon()
 $appIcon = [System.Drawing.Icon]::FromHandle($iconHandle)
 
-# Create NotifyIcon
-$Global:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
-$Global:NotifyIcon.Icon = $appIcon
-$Global:NotifyIcon.Text = "Margin Print Room (Active)"
-$Global:NotifyIcon.Visible = $true
+$script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
+$script:NotifyIcon.Icon = $appIcon
+$script:NotifyIcon.Text = "Margin print room"
+$script:NotifyIcon.Visible = $true
 
-# Context Menu
 $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
 $menuOpen = $contextMenu.Items.Add("Open Margin in Browser")
@@ -128,32 +152,71 @@ $menuLogs.add_Click({
     if (Test-Path $LogFile) {
         Start-Process "notepad.exe" $LogFile
     } else {
-        [System.Windows.Forms.MessageBox]::Show("Log file not created yet.", "Margin")
+        [System.Windows.Forms.MessageBox]::Show("The log file has not been created yet.", "Margin")
     }
+})
+
+$menuFolder = $contextMenu.Items.Add("Open Data Folder")
+$menuFolder.add_Click({
+    $dataDir = Join-Path $RootDir "data"
+    if (-not (Test-Path $dataDir)) {
+        New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+    }
+    Start-Process "explorer.exe" $dataDir
 })
 
 $contextMenu.Items.Add("-") | Out-Null
 
 $menuExit = $contextMenu.Items.Add("Exit Margin")
 $menuExit.add_Click({
-    Stop-MarginBackend
-    $Global:NotifyIcon.Visible = $false
-    $Global:NotifyIcon.Dispose()
+    $script:Stopping = $true
     [System.Windows.Forms.Application]::Exit()
 })
 
-$Global:NotifyIcon.ContextMenuStrip = $contextMenu
+$script:NotifyIcon.ContextMenuStrip = $contextMenu
 
-# Double click opens Margin
-$Global:NotifyIcon.add_DoubleClick({
+$script:NotifyIcon.add_DoubleClick({
     Start-Process "http://localhost:$Port"
 })
 
-# Start backend
-Start-MarginBackend
+# Supervise the backend. A crash or an accidental close is repaired on the
+# next tick instead of waiting for someone to notice the room is dark.
+$script:Watchdog = New-Object System.Windows.Forms.Timer
+$script:Watchdog.Interval = 10000
+$script:Watchdog.add_Tick({
+    if ($script:Stopping) { return }
+    if (-not $script:NodeProcess -or $script:NodeProcess.HasExited) {
+        $code = "unknown"
+        if ($script:NodeProcess) {
+            try { $code = $script:NodeProcess.ExitCode } catch {}
+        }
+        Write-MarginLog "Backend is not running (exit $code). Restarting it."
+        if (Start-MarginBackend) {
+            $script:NotifyIcon.ShowBalloonTip(2000, "Margin", "The print room is back online.", [System.Windows.Forms.ToolTipIcon]::Info)
+        }
+    }
+})
 
-# Show startup balloon
-$Global:NotifyIcon.ShowBalloonTip(3000, "Margin", "Print room is running in background at http://localhost:$Port", [System.Windows.Forms.ToolTipIcon]::Info)
+$started = Start-MarginBackend
+if ($started) {
+    $script:NotifyIcon.ShowBalloonTip(3000, "Margin", "Print room is running in the background at http://localhost:$Port", [System.Windows.Forms.ToolTipIcon]::Info)
+} else {
+    $script:NotifyIcon.ShowBalloonTip(6000, "Margin", "The print room could not start. Right-click the tray icon and choose View Logs.", [System.Windows.Forms.ToolTipIcon]::Error)
+}
+$script:Watchdog.Start()
 
-# Run message loop
-[System.Windows.Forms.Application]::Run()
+try {
+    [System.Windows.Forms.Application]::Run()
+} finally {
+    $script:Stopping = $true
+    try { $script:Watchdog.Stop() } catch {}
+    Stop-MarginBackend
+    try {
+        $script:NotifyIcon.Visible = $false
+        $script:NotifyIcon.Dispose()
+    } catch {}
+    if ($script:Mutex) {
+        try { $script:Mutex.ReleaseMutex() } catch {}
+        try { $script:Mutex.Dispose() } catch {}
+    }
+}

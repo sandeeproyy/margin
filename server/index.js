@@ -23,7 +23,6 @@ import {
   createPrinterService,
   pickActivePrinter,
   toClientPrinter,
-  toPublicPrinters,
   validateAndNormalizeSettings,
 } from './printers.js';
 import { createPrintService } from './print-service.js';
@@ -449,17 +448,11 @@ app.get('/api/bootstrap', async (req, res, next) => {
     let printers;
     let defaultPrinterId;
 
-    if (req.user.role === 'admin') {
-      printers = toPublicPrinters(printerData.printers ?? []);
-      const active = pickActivePrinter(printerData.printers ?? [], selection);
-      defaultPrinterId = active.printer
-        ? printers.find((p) => p.id === active.printer.id)?.id ?? printers[0]?.id ?? null
-        : printers[0]?.id ?? null;
-    } else {
-      const active = pickActivePrinter(printerData.printers ?? [], selection);
-      printers = active.printer ? [toClientPrinter(active.printer)] : [];
-      defaultPrinterId = printers[0]?.id ?? null;
-    }
+    // Everyone — the owner included — sees only the printer the owner chose
+    // for client-side use. The full detected list lives in the admin panel.
+    const active = pickActivePrinter(printerData.printers ?? [], selection);
+    printers = active.printer ? [toClientPrinter(active.printer)] : [];
+    defaultPrinterId = printers[0]?.id ?? null;
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
@@ -492,13 +485,10 @@ app.get('/api/printers', async (req, res, next) => {
       printerSelection.get(),
     ]);
 
-    let printers;
-    if (req.user.role === 'admin') {
-      printers = toPublicPrinters(data.printers ?? []);
-    } else {
-      const active = pickActivePrinter(data.printers ?? [], selection);
-      printers = active.printer ? [toClientPrinter(active.printer)] : [];
-    }
+    // The print sheet shows the same single active printer for everyone. The
+    // owner manages the full detected list from the admin panel instead.
+    const active = pickActivePrinter(data.printers ?? [], selection);
+    const printers = active.printer ? [toClientPrinter(active.printer)] : [];
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({

@@ -3881,6 +3881,7 @@ h2 {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
+  border: 1px solid transparent;
   border-radius: var(--radius);
   background: var(--paper);
   font-size: 12.5px;
@@ -4003,3 +4004,385 @@ h2 {
   font-weight: 500;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Topbar actions: quota chip, allowance, account menu                 */
+/* ------------------------------------------------------------------ */
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.quota-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  height: 36px;
+  padding: 5px 12px 6px;
+  border: 1px solid var(--line-mid);
+  border-radius: 999px;
+  background: rgba(250, 247, 239, 0.52);
+  color: var(--ink-soft);
+  transition: border-color 180ms, background 180ms;
+}
+
+.quota-chip:hover {
+  border-color: var(--ink);
+  background: var(--paper-bright);
+}
+
+.quota-chip .micro {
+  font-size: 7.5px;
+  color: var(--muted);
+}
+
+.quota-chip span:last-child {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.allowance {
+  margin-top: 14px;
+  padding: 12px 14px 13px;
+  border: 1px dashed var(--line-mid);
+  border-radius: var(--radius);
+}
+
+.allowance-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.allowance-head .micro {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.allowance-head span:last-child {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.allowance-rail,
+.quota-rail {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--line);
+}
+
+.allowance-rail span,
+.quota-rail span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--orange);
+  transition: width 420ms var(--ease);
+}
+
+.allowance-rail span.is-low,
+.quota-rail span.is-low {
+  background: var(--red);
+}
+
+.account-menu-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(46vw, 240px);
+  height: 36px;
+  padding: 0 9px 0 5px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  transition: border-color 180ms, background 180ms;
+}
+
+.account-button:hover {
+  border-color: var(--line-mid);
+  background: rgba(250, 247, 239, 0.52);
+}
+
+.account-button > svg {
+  width: 13px;
+  height: 13px;
+  opacity: 0.55;
+  flex: 0 0 auto;
+}
+
+.account-button > svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--orange);
+  color: var(--paper-bright);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+}
+
+.account-name {
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 246px;
+  padding: 6px;
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper-bright);
+  box-shadow: 9px 9px 0 var(--paper-deep);
+  animation: menuIn 200ms var(--ease);
+}
+
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.account-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-menu-head strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.account-menu-head span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quota-block {
+  padding: 11px 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.quota-block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.quota-block-head .micro {
+  color: var(--muted);
+  font-size: 7.5px;
+}
+
+.quota-block-head span:last-child {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 140ms, color 140ms;
+}
+
+.account-menu-item:hover {
+  background: var(--paper-deep);
+}
+
+.account-menu-item svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.5;
+  flex: 0 0 auto;
+}
+
+.account-menu-item svg path,
+.account-menu-item svg rect {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-menu-item--quiet {
+  color: var(--muted);
+}
+
+.account-menu-item--quiet:hover {
+  color: var(--red);
+}
+
+/* ------------------------------------------------------------------ */
+/* Auth form pieces + shared field label                               */
+/* ------------------------------------------------------------------ */
+
+.auth-tabs {
+  margin-bottom: 20px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.auth-form .button {
+  margin-top: 24px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Print sheet extras                                                  */
+/* ------------------------------------------------------------------ */
+
+.file-ticket-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.sheet-quota {
+  margin-top: 7px;
+  color: var(--faint);
+  font-size: 9.5px;
+  text-align: center;
+}
+
+.sheet-quota.is-over {
+  color: var(--red);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin variants                                                      */
+/* ------------------------------------------------------------------ */
+
+.admin-list--people {
+  margin-top: 4px;
+}
+
+.admin-row--person {
+  align-items: center;
+}
+
+.admin-row-side--actions {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.preview-spinner {
+  display: block;
+  border-color: rgba(23, 24, 16, 0.18);
+  border-top-color: var(--ink-soft);
+}
+
+.admin-row--printer {
+  align-items: flex-start;
+}
+
+.admin-row--printer .admin-row-side {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.admin-row--printer .text-button--small {
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .admin-row--printer .admin-row-copy strong {
+    white-space: normal;
+  }
+
+  .topbar-actions {
+    gap: 7px;
+  }
+
+  .quota-chip {
+    display: none;
+  }
+
+  .account-name {
+    display: none;
+  }
+
+  .account-button {
+    padding-right: 5px;
+  }
+
+  .account-menu {
+    width: min(84vw, 260px);
+  }
+}
