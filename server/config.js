@@ -169,6 +169,25 @@ export async function loadConfig() {
     process.env.MARGIN_PIN_ATTEMPTS,
     10,
   );
+  const razorpayKeyId = String(process.env.RAZORPAY_KEY_ID ?? '').trim();
+  const razorpayKeySecret = String(
+    process.env.RAZORPAY_KEY_SECRET ?? '',
+  ).trim();
+  const pricePerPagePaise = parsePositiveInt(
+    process.env.MARGIN_PRICE_PER_PAGE_PAISE,
+    86,
+  );
+  const minimumChargePaise = Math.max(
+    parsePositiveInt(process.env.MARGIN_MINIMUM_CHARGE_PAISE, 100),
+    100,
+  );
+  const paymentOrderTtlMinutes = Math.min(
+    Math.max(
+      parsePositiveInt(process.env.MARGIN_PAYMENT_ORDER_TTL_MINUTES, 30),
+      5,
+    ),
+    240,
+  );
 
   return {
     root: ROOT,
@@ -180,6 +199,7 @@ export async function loadConfig() {
     usersPath: path.join(dataDir, 'users.json'),
     historyPath: path.join(dataDir, 'history.json'),
     printerSelectionPath: path.join(dataDir, 'printer-selection.json'),
+    paymentsPath: path.join(dataDir, 'payments.json'),
     adminInitialPasswordPath: path.join(dataDir, 'admin-initial-password.txt'),
     port,
     host,
@@ -211,6 +231,17 @@ export async function loadConfig() {
     printPin,
     printPinUnlockMinutes,
     pinAttemptsPerWindow,
+    // Payments run on this laptop, never in the browser. Only the public key
+    // ID is ever sent to a client, and only after a paid order is requested.
+    razorpayKeyId,
+    razorpayKeySecret,
+    razorpayApiBase: String(
+      process.env.MARGIN_RAZORPAY_API_BASE ?? '',
+    ).trim(),
+    paymentsEnabled: Boolean(razorpayKeyId && razorpayKeySecret),
+    pricePerPagePaise,
+    minimumChargePaise,
+    paymentOrderTtlMinutes,
     openSignup: parseBoolean(process.env.MARGIN_OPEN_SIGNUP),
     admin: {
       email: adminEmail,

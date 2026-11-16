@@ -110,6 +110,74 @@ The PIN is a second gate in front of paper, separate from signing in.
 Share the PIN separately from the app address, and only with people you would
 let use the printer.
 
+## Payments
+
+Margin uses Razorpay and charges per print job, after one free page per member.
+
+- **First page ever is free.** A one-page first job costs nothing. A three-page
+  first job uses the free page and charges for two pages.
+- **The owner prints free.** The admin account is exempt.
+- **₹0.86 per page** by default, configured with
+  `MARGIN_PRICE_PER_PAGE_PAISE`. Razorpay's minimum INR charge is ₹1, so a single
+  paid page costs ₹1. Multi-page jobs use the exact per-page total: two pages
+  cost ₹1.72, three pages cost ₹2.58, and so on.
+- **Pay per job.** There is no prepaid wallet. Each paid print gets its own
+  Razorpay order and Checkout is opened from the print sheet.
+
+To enable payments:
+
+1. Create Razorpay API keys (test keys start with `rzp_test_`).
+2. Put them in the laptop `.env`:
+
+   ```dotenv
+   RAZORPAY_KEY_ID=rzp_test_your_key_id
+   RAZORPAY_KEY_SECRET=your_key_secret
+   ```
+
+3. Restart the backend. No Razorpay setting belongs in Vercel: orders are
+   created and verified on the laptop, never in the browser.
+4. Keep Razorpay's payment-capture setting on **automatic**. The server also
+   asks for automatic capture per order and captures an authorised payment if
+   one arrives that way.
+
+How verification works:
+
+- The browser receives only the public Key ID, never the Key Secret.
+- The server recomputes the price from the job, page range, copies, free-page
+  state, and owner exemption. A client cannot choose the amount.
+- Before a print is accepted, the server verifies Razorpay's
+  `HMAC_SHA256(order_id|payment_id, key_secret)` signature, fetches the order
+  and payment from Razorpay, and confirms the amount, currency, and captured
+  status. The same payment cannot be used twice.
+- Payment records live in `data/payments.json` and contain only IDs, amounts,
+  and page counts. They never contain document names or file contents.
+- If a print is accepted by Windows but later fails in the spooler, the payment
+  is already consumed. Refund it manually from the Razorpay dashboard.
+
+An open unpaid order holds the free page for 30 minutes
+(`MARGIN_PAYMENT_ORDER_TTL_MINUTES`) so two checkouts cannot both claim it.
+Closing Razorpay Checkout cancels that order.
+
+### Public policy pages
+
+Razorpay's website review needs reachable policy pages without signing in. These
+are plain static files in `public/`:
+
+- `/pricing.html` — free page, per-page price, minimum charge, examples
+- `/terms.html` — accounts, documents, fair use, printing, payments, liability
+- `/privacy.html` — data collected, document handling, cookies, retention
+- `/refunds.html` — cancellation, refunds, reprints, timing
+- `/contact.html` — operator, email, what to include in a request
+
+They are linked from the signed-out footer, the signed-in footer, and the help
+page. The operator is shown as **Sandeep Roy, India**, with
+`sandeeproy4984@gmail.com` as the contact. Keep those details, the last-updated
+date, and the prices consistent across all five pages when anything changes.
+
+Razorpay may also ask for a full postal address or a phone number during review.
+Those details are intentionally not published yet; add them consistently if
+the review requires them.
+
 ## Choosing the active printer
 
 Margin detects every printer Windows reports, whether it is connected by USB or
@@ -301,8 +369,10 @@ Defaults, all configurable in `.env`:
 The test suite uses an isolated temporary data directory and a random local
 port. It exercises health, sign-in, invitations, per-user isolation, PIN gating,
 admin printer selection, client-side name filtering, direct upload, PDF
-preparation, thumbnails, and page previews. It deliberately stops before any
-real print, so no paper moves.
+preparation, thumbnails, page previews, paywall pricing, free-page reservation,
+payment-record persistence, Razorpay signature verification, and the Razorpay
+client against a local mock. It deliberately stops before any real print, so no
+paper moves.
 
 ```powershell
 npm test
@@ -351,15 +421,19 @@ different printer until the owner clears or replaces the choice.
 
 | Path | Purpose |
 | --- | --- |
-| `public/` | Static UI, help page, fonts, icons |
+| `public/` | Static UI, policy pages, help page, fonts, icons |
 | `public/app.js` | Browser application, PIN flow, print sheet, admin panel |
 | `server/index.js` | Express API, auth routes, uploads, PIN gate, admin printer routes |
 | `server/printers.js` | Printer discovery, selection store, client-safe projection |
 | `server/print-service.js` | Print queue, rasterization, GDI print helper, history |
+| `server/paywall.js` | Free-page rules and per-page quote calculation |
+| `server/payments.js` | Payment records, idempotency, open-order tracking |
+| `server/razorpay.js` | Razorpay orders, payments, capture, signature checks |
 | `server/security.js` | Sessions, origin/CSRF checks, proxy secret, rate limits |
 | `scripts/print-pages.ps1` | Native Windows GDI printing |
 | `scripts/get-printers.ps1` | Windows printer enumeration |
 | `scripts/tray.ps1` | Hidden tray app and backend supervisor |
+| `scripts/test-paywall.js` | Isolated pricing, payment and Razorpay client tests |
 | `scripts/test-multiuser-pin.js` | Isolated end-to-end test suite |
 | `vercel.json` | Static hosting plus external API proxy to the tunnel |
 

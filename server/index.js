@@ -18,6 +18,8 @@ import {
   renderPagePreview,
 } from './documents.js';
 import { createHistoryService } from './history.js';
+import { computeQuote, freePageStatus, sameQuote } from './paywall.js';
+import { createPaymentStore } from './payments.js';
 import {
   createPrinterSelectionStore,
   createPrinterService,
@@ -26,6 +28,7 @@ import {
   validateAndNormalizeSettings,
 } from './printers.js';
 import { createPrintService } from './print-service.js';
+import { createRazorpayClient } from './razorpay.js';
 import {
   createSecurity,
   createSlidingLimiter,
@@ -51,6 +54,14 @@ const history = createHistoryService({
   maxEntries: config.maxHistory,
 });
 const printService = createPrintService({ config, history });
+const payments = createPaymentStore({ filePath: config.paymentsPath });
+const razorpay = config.paymentsEnabled
+  ? createRazorpayClient({
+      keyId: config.razorpayKeyId,
+      keySecret: config.razorpayKeySecret,
+      apiBase: config.razorpayApiBase,
+    })
+  : null;
 
 const uploadLimiter = createSlidingLimiter({
   windowMs: 60 * 60 * 1000,
@@ -61,6 +72,11 @@ const printLimiter = createSlidingLimiter({
   windowMs: 60 * 60 * 1000,
   max: config.printsPerHour,
   message: 'You have sent a lot of jobs in the last hour. Try again a little later.',
+});
+const paymentLimiter = createSlidingLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  message: 'You have started a lot of payments in the last hour. Try again a little later.',
 });
 const pinLimiter = createSlidingLimiter({
   windowMs: 15 * 60 * 1000,
@@ -107,6 +123,208 @@ async function quotaForUser(user) {
     dailyPages: config.dailyPages,
     usedPages,
     remainingPages: Math.max(0, config.dailyPages - usedPages),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Paywall helpers                                                     */
+/* ------------------------------------------------------------------ */
+
+const userLocks = new Map();
+
+// Serialise pricing, free-page reservation and print acceptance per account.
+// This is a single-process app, so an in-memory queue is enough to stop two
+// simultaneous requests from claiming the same free page.
+function withUserLock(userId, task) {
+  const prior = userLocks.get(userId) ?? Promise.resolve();
+  const run = prior.then(task);
+  const tail = run.catch(() => {});
+  userLocks.set(userId, tail);
+  tail.finally(() => {
+    if (userLocks.get(userId) === tail) userLocks.delete(userId);
+  });
+  return run;
+}
+
+function paywallFor(user) {
+  const status = freePageStatus(user, {
+    reservationTtlMs: config.paymentOrderTtlMinutes * 60 * 1000,
+  });
+  return {
+    enabled: Boolean(config.paymentsEnabled),
+    currency: 'INR',
+    pricePerPagePaise: config.pricePerPagePaise,
+    minimumChargePaise: config.minimumChargePaise,
+    freePageAvailable: status.available,
+    freePageReserved: Boolean(status.reserved),
+    ownerExempt: status.ownerExempt,
+  };
+}
+
+function quoteFor(
+  user,
+  totalPages,
+  { forOrderId = null, allowFreePage = false } = {},
+) {
+  return computeQuote({
+    user,
+    totalPages,
+    pricePerPagePaise: config.pricePerPagePaise,
+    minimumChargePaise: config.minimumChargePaise,
+    reservationTtlMs: config.paymentOrderTtlMinutes * 60 * 1000,
+    forOrderId,
+    allowFreePage,
+  });
+}
+
+function sendFailure(res, failure) {
+  res.status(failure.status || 400).json(failure.body);
+}
+
+function printEstimate(job, rawRange, copies) {
+  const range = parsePageRange(rawRange ?? 'all', job.info?.pageCount ?? 0);
+  if (!range.ok) return { ok: false, error: range.error };
+  return {
+    ok: true,
+    range,
+    totalPages: range.indices.length * Math.max(1, Number(copies) || 1),
+  };
+}
+
+/**
+ * Run every check that happens before money changes hands or paper moves.
+ * Both the payment-order endpoint and the print endpoint use this so a quote
+ * can never be built from different rules.
+ */
+async function evaluatePrintRequest(
+  req,
+  job,
+  { forOrderId = null, allowFreePage = false } = {},
+) {
+  if (!isPinVerified(req.user.id)) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        ok: false,
+        error: 'Enter the print room PIN before sending a job.',
+        code: 'PIN_REQUIRED',
+      },
+    };
+  }
+
+  if (!config.isWindows) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        ok: false,
+        error: 'Automatic printing is not available right now.',
+      },
+    };
+  }
+
+  const selection = await printerSelection.get();
+  const printerData = await printerService.get();
+  const active = pickActivePrinter(printerData.printers ?? [], selection);
+  const printer = active.printer;
+  if (!printer) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        ok: false,
+        error:
+          'The printer is not available right now. Check that it is switched on and connected.',
+      },
+    };
+  }
+
+  const normalized = validateAndNormalizeSettings(printer, req.body ?? {});
+  if (!normalized.ok) {
+    return {
+      ok: false,
+      status: 400,
+      body: { ok: false, error: normalized.error },
+    };
+  }
+
+  if (
+    printService.countActiveForUser(req.user.id) >=
+    config.maxActiveJobsPerUser
+  ) {
+    return {
+      ok: false,
+      status: 429,
+      body: {
+        ok: false,
+        error:
+          'You already have a few jobs in the printer queue. Wait for those to finish, then try again.',
+      },
+    };
+  }
+  if (printService.countActiveGlobal() >= config.maxActiveJobsGlobal) {
+    return {
+      ok: false,
+      status: 429,
+      body: {
+        ok: false,
+        error: 'The print room is busy right now. Try again in a moment.',
+      },
+    };
+  }
+
+  const quota = await quotaForUser(req.user);
+  const since = startOfToday().toISOString();
+  const globalUsed = await history.globalPagesSince(since);
+  const estimate = printEstimate(
+    job,
+    req.body?.pageRange,
+    normalized.settings.copies,
+  );
+  if (!estimate.ok) {
+    return {
+      ok: false,
+      status: 400,
+      body: { ok: false, error: estimate.error },
+    };
+  }
+
+  if (quota.usedPages + estimate.totalPages > quota.dailyPages) {
+    return {
+      ok: false,
+      status: 429,
+      body: {
+        ok: false,
+        error:
+          quota.remainingPages > 0
+            ? `That would go over today's limit. You have ${quota.remainingPages} page${quota.remainingPages === 1 ? '' : 's'} left today.`
+            : "You have reached today's print limit. Try again tomorrow.",
+      },
+    };
+  }
+  if (globalUsed + estimate.totalPages > config.globalDailyPages) {
+    return {
+      ok: false,
+      status: 429,
+      body: {
+        ok: false,
+        error:
+          'The print room has reached its limit for today. Try again tomorrow.',
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    printer,
+    settings: normalized.settings,
+    range: estimate.range,
+    totalPages: estimate.totalPages,
+    quote: quoteFor(req.user, estimate.totalPages, {
+      forOrderId,
+      allowFreePage,
+    }),
   };
 }
 
@@ -471,6 +689,7 @@ app.get('/api/bootstrap', async (req, res, next) => {
       history: recent,
       quota,
       pinVerified: isPinVerified(req.user.id),
+      paywall: paywallFor(req.user),
     });
   } catch (error) {
     next(error);
@@ -636,46 +855,193 @@ app.get('/api/jobs/:id', (req, res) => {
   sendJobStatus(res, job);
 });
 
+async function resolvePaymentForPrint({
+  user,
+  job,
+  orderId,
+  body,
+  quote,
+}) {
+  const record = await payments.get(orderId);
+  if (!record || record.userId !== user.id || record.jobId !== job.id) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        ok: false,
+        code: 'PAYMENT_NOT_FOUND',
+        error: 'That payment does not match this document. Start the payment again.',
+      },
+    };
+  }
+
+  if (record.status === 'consumed') {
+    return { ok: true, record, alreadyAccepted: true };
+  }
+  if (record.status === 'cancelled') {
+    return {
+      ok: false,
+      status: 402,
+      body: {
+        ok: false,
+        code: 'PAYMENT_REQUIRED',
+        error: 'That payment was cancelled. Start the payment again.',
+        quote,
+      },
+    };
+  }
+  if (!sameQuote(record, quote)) {
+    return {
+      ok: false,
+      status: 409,
+      body: {
+        ok: false,
+        code: 'PAYMENT_MISMATCH',
+        error:
+          'The print settings or your free page changed after checkout. Start a new payment.',
+        quote,
+      },
+    };
+  }
+  if (record.status === 'paid') {
+    return { ok: true, record };
+  }
+
+  if (!config.paymentsEnabled || !razorpay) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        ok: false,
+        code: 'PAYMENTS_UNAVAILABLE',
+        error: 'Payments are not set up yet. Ask the print room owner.',
+      },
+    };
+  }
+
+  const paymentId = String(body?.razorpay_payment_id ?? '').trim();
+  const signature = String(body?.razorpay_signature ?? '').trim();
+  if (!paymentId || !signature) {
+    return {
+      ok: false,
+      status: 402,
+      body: {
+        ok: false,
+        code: 'PAYMENT_REQUIRED',
+        error: 'This print needs a completed payment before it can be sent.',
+        quote,
+      },
+    };
+  }
+
+  if (
+    !razorpay.verifySignature({
+      orderId,
+      paymentId,
+      signature,
+    })
+  ) {
+    return {
+      ok: false,
+      status: 402,
+      body: {
+        ok: false,
+        code: 'PAYMENT_NOT_VERIFIED',
+        error: 'That payment could not be verified. Nothing was printed.',
+        quote,
+      },
+    };
+  }
+
+  try {
+    const order = await razorpay.getOrder(orderId);
+    if (
+      !order ||
+      order.id !== orderId ||
+      Number(order.amount) !== Number(record.amountPaise) ||
+      String(order.currency || 'INR') !== String(record.currency || 'INR')
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          ok: false,
+          code: 'PAYMENT_MISMATCH',
+          error: 'That payment does not match this print. Start a new payment.',
+          quote,
+        },
+      };
+    }
+
+    let payment = await razorpay.getPayment(paymentId);
+    if (
+      !payment ||
+      payment.id !== paymentId ||
+      payment.order_id !== orderId ||
+      Number(payment.amount) !== Number(record.amountPaise) ||
+      String(payment.currency || 'INR') !== String(record.currency || 'INR')
+    ) {
+      return {
+        ok: false,
+        status: 409,
+        body: {
+          ok: false,
+          code: 'PAYMENT_MISMATCH',
+          error: 'That payment does not match this print. Start a new payment.',
+          quote,
+        },
+      };
+    }
+
+    if (payment.status === 'authorized') {
+      payment = await razorpay.capturePayment(paymentId, {
+        amountPaise: record.amountPaise,
+        currency: 'INR',
+      });
+    }
+    if (!payment || payment.status !== 'captured') {
+      return {
+        ok: false,
+        status: 402,
+        body: {
+          ok: false,
+          code: 'PAYMENT_NOT_CAPTURED',
+          error:
+            'The payment has not completed yet. Wait a moment, then try again.',
+          quote,
+        },
+      };
+    }
+
+    const updated = await payments.markPaid(orderId, {
+      paymentId,
+      signatureVerified: true,
+    });
+    return { ok: true, record: updated };
+  } catch (error) {
+    console.error('[payments] Razorpay verification failed:', error.message);
+    if (error.status === 401) {
+      console.error(
+        '[payments] Razorpay rejected the API credentials. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+      );
+    }
+    return {
+      ok: false,
+      status: 502,
+      body: {
+        ok: false,
+        code: 'PAYMENT_GATEWAY_ERROR',
+        error:
+          'The payment could not be confirmed right now. Try again in a moment.',
+      },
+    };
+  }
+}
+
 app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next) => {
   try {
     const job = ownedJob(req, res);
     if (!job) return;
-
-    if (!isPinVerified(req.user.id)) {
-      res.status(403).json({
-        ok: false,
-        error: 'Enter the print room PIN before sending a job.',
-        code: 'PIN_REQUIRED',
-      });
-      return;
-    }
-
-    if (!config.isWindows) {
-      res.status(503).json({
-        ok: false,
-        error: 'Automatic printing is not available right now.',
-      });
-      return;
-    }
-
-    const selection = await printerSelection.get();
-    const printerData = await printerService.get();
-    const active = pickActivePrinter(printerData.printers ?? [], selection);
-    const printer = active.printer;
-    if (!printer) {
-      res.status(409).json({
-        ok: false,
-        error:
-          'The printer is not available right now. Check that it is switched on and connected.',
-      });
-      return;
-    }
-
-    const normalized = validateAndNormalizeSettings(printer, req.body ?? {});
-    if (!normalized.ok) {
-      res.status(400).json({ ok: false, error: normalized.error });
-      return;
-    }
 
     const rate = printLimiter.check(req.user.id);
     if (!rate.ok) {
@@ -683,70 +1049,457 @@ app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next
       return;
     }
 
-    if (printService.countActiveForUser(req.user.id) >= config.maxActiveJobsPerUser) {
-      res.status(429).json({
-        ok: false,
-        error:
-          'You already have a few jobs in the printer queue. Wait for those to finish, then try again.',
+    await withUserLock(req.user.id, async () => {
+      const orderId = String(req.body?.razorpay_order_id ?? '').trim();
+      let knownPayment = null;
+
+      // A repeated request carrying a payment that already produced a print
+      // must never print twice. Show the existing job instead.
+      if (orderId) {
+        knownPayment = await payments.get(orderId);
+        if (
+          knownPayment &&
+          knownPayment.userId === req.user.id &&
+          knownPayment.jobId === job.id &&
+          knownPayment.status === 'consumed'
+        ) {
+          res.status(200).json({
+            ok: true,
+            duplicate: true,
+            job: printService.publicStatus(job),
+            payment: {
+              orderId: knownPayment.orderId,
+              amountPaise: knownPayment.amountPaise,
+              currency: knownPayment.currency,
+            },
+          });
+          return;
+        }
+      }
+
+      const evaluation = await evaluatePrintRequest(req, job, {
+        forOrderId: orderId || null,
+        allowFreePage: Boolean(
+          knownPayment &&
+            knownPayment.userId === req.user.id &&
+            knownPayment.jobId === job.id &&
+            knownPayment.freePageApplied,
+        ),
       });
-      return;
-    }
-    if (printService.countActiveGlobal() >= config.maxActiveJobsGlobal) {
-      res.status(429).json({
-        ok: false,
-        error: 'The print room is busy right now. Try again in a moment.',
+      if (!evaluation.ok) {
+        sendFailure(res, evaluation);
+        return;
+      }
+
+      const { printer, settings, quote } = evaluation;
+
+      if (quote.freePageReserved) {
+        res.status(409).json({
+          ok: false,
+          code: 'PAYMENT_IN_PROGRESS',
+          error:
+            'A payment is already open for another document. Finish that payment first.',
+        });
+        return;
+      }
+
+      let paymentRecord = null;
+      if (quote.amountPaise > 0) {
+        if (!orderId) {
+          res.status(402).json({
+            ok: false,
+            code: 'PAYMENT_REQUIRED',
+            error: 'This print needs a payment before it can be sent.',
+            quote,
+            paywall: paywallFor(req.user),
+          });
+          return;
+        }
+
+        const resolution = await resolvePaymentForPrint({
+          user: req.user,
+          job,
+          orderId,
+          body: req.body,
+          quote,
+        });
+        if (!resolution.ok) {
+          sendFailure(res, resolution);
+          return;
+        }
+        paymentRecord = resolution.record;
+        if (resolution.alreadyAccepted) {
+          res.status(200).json({
+            ok: true,
+            duplicate: true,
+            job: printService.publicStatus(job),
+            payment: {
+              orderId: paymentRecord.orderId,
+              amountPaise: paymentRecord.amountPaise,
+              currency: paymentRecord.currency,
+            },
+          });
+          return;
+        }
+      }
+
+      const accepted = printService.accept(
+        job,
+        printer,
+        settings,
+        req.body?.pageRange ?? 'all',
+      );
+      if (!accepted.ok) {
+        res
+          .status(accepted.status || 400)
+          .json({ ok: false, error: accepted.error });
+        return;
+      }
+
+      if (quote.freePageApplied) {
+        try {
+          await users.markFreePageUsed(req.user.id, {
+            jobId: job.id,
+            orderId: paymentRecord?.orderId ?? null,
+          });
+        } catch (error) {
+          console.error(
+            '[payments] The free page could not be marked as used:',
+            error.message,
+          );
+        }
+      }
+
+      if (paymentRecord) {
+        try {
+          await payments.markConsumed(paymentRecord.orderId, {
+            printJobId: job.id,
+          });
+        } catch (error) {
+          console.error(
+            '[payments] The payment could not be marked as consumed:',
+            error.message,
+          );
+        }
+      }
+
+      res.status(202).json({
+        ok: true,
+        job: printService.publicStatus(job),
+        payment: paymentRecord
+          ? {
+              orderId: paymentRecord.orderId,
+              amountPaise: paymentRecord.amountPaise,
+              currency: paymentRecord.currency,
+            }
+          : null,
       });
-      return;
-    }
-
-    const quota = await quotaForUser(req.user);
-    const since = startOfToday().toISOString();
-    const globalUsed = await history.globalPagesSince(since);
-
-    const estimateRange = parsePageRange(
-      req.body?.pageRange ?? 'all',
-      job.info?.pageCount ?? 0,
-    );
-    if (!estimateRange.ok) {
-      res.status(400).json({ ok: false, error: estimateRange.error });
-      return;
-    }
-    const estimate = estimateRange.indices.length * normalized.settings.copies;
-
-    if (quota.usedPages + estimate > quota.dailyPages) {
-      res.status(429).json({
-        ok: false,
-        error:
-          quota.remainingPages > 0
-            ? `That would go over today's limit. You have ${quota.remainingPages} page${quota.remainingPages === 1 ? '' : 's'} left today.`
-            : "You have reached today's print limit. Try again tomorrow.",
-      });
-      return;
-    }
-    if (globalUsed + estimate > config.globalDailyPages) {
-      res.status(429).json({
-        ok: false,
-        error: 'The print room has reached its limit for today. Try again tomorrow.',
-      });
-      return;
-    }
-
-    const accepted = printService.accept(
-      job,
-      printer,
-      normalized.settings,
-      req.body?.pageRange ?? 'all',
-    );
-    if (!accepted.ok) {
-      res.status(accepted.status || 400).json({ ok: false, error: accepted.error });
-      return;
-    }
-
-    res.status(202).json({ ok: true, job: printService.publicStatus(job) });
+    });
   } catch (error) {
     next(error);
   }
 });
+
+app.post(
+  '/api/jobs/:id/payment-order',
+  security.requireAppIntent,
+  async (req, res, next) => {
+    try {
+      const job = ownedJob(req, res);
+      if (!job) return;
+
+      const rate = paymentLimiter.check(req.user.id);
+      if (!rate.ok) {
+        res.status(429).json({ ok: false, error: rate.message });
+        return;
+      }
+
+      await withUserLock(req.user.id, async () => {
+        const evaluation = await evaluatePrintRequest(req, job);
+        if (!evaluation.ok) {
+          sendFailure(res, evaluation);
+          return;
+        }
+
+        if (evaluation.quote.amountPaise === 0) {
+          res.status(400).json({
+            ok: false,
+            code: 'PAYMENT_NOT_REQUIRED',
+            error: 'This print does not need a payment.',
+            quote: evaluation.quote,
+          });
+          return;
+        }
+
+        if (!config.paymentsEnabled || !razorpay) {
+          res.status(503).json({
+            ok: false,
+            code: 'PAYMENTS_UNAVAILABLE',
+            error: 'Payments are not set up yet. Ask the print room owner.',
+          });
+          return;
+        }
+
+        const ttlMs = config.paymentOrderTtlMinutes * 60 * 1000;
+        const existing = await payments.findActiveForJob(
+          req.user.id,
+          job.id,
+        );
+
+        if (existing) {
+          if (existing.status === 'consumed') {
+            res.status(409).json({
+              ok: false,
+              code: 'ALREADY_PRINTED',
+              error: 'This document has already printed.',
+            });
+            return;
+          }
+
+          const referenceQuote = quoteFor(
+            req.user,
+            evaluation.totalPages,
+            {
+              forOrderId: existing.orderId,
+              allowFreePage: existing.freePageApplied,
+            },
+          );
+
+          if (!sameQuote(existing, referenceQuote)) {
+            if (existing.status === 'paid') {
+              res.status(409).json({
+                ok: false,
+                code: 'PAYMENT_MISMATCH',
+                error:
+                  'The print settings changed after this payment. Ask the owner for a refund, then start a new payment.',
+                quote: referenceQuote,
+              });
+              return;
+            }
+            await payments.cancel(existing.orderId);
+            await users.clearFreePageReservation(req.user.id, {
+              orderId: existing.orderId,
+            });
+          } else if (existing.status === 'paid') {
+            res.json({
+              ok: true,
+              payment: {
+                orderId: existing.orderId,
+                amountPaise: existing.amountPaise,
+                currency: existing.currency,
+                quote: referenceQuote,
+                paid: true,
+              },
+            });
+            return;
+          } else {
+            const age =
+              Date.now() - new Date(existing.createdAt ?? 0).getTime();
+            if (age >= 0 && age <= ttlMs) {
+              res.status(201).json({
+                ok: true,
+                payment: {
+                  orderId: existing.orderId,
+                  keyId: config.razorpayKeyId,
+                  amountPaise: existing.amountPaise,
+                  currency: existing.currency,
+                  quote: referenceQuote,
+                  description: `Margin print · ${referenceQuote.totalPages} page${referenceQuote.totalPages === 1 ? '' : 's'}`,
+                  prefill: {
+                    name: req.user.name,
+                    email: req.user.email,
+                  },
+                  reused: true,
+                },
+              });
+              return;
+            }
+            await payments.cancel(existing.orderId);
+            await users.clearFreePageReservation(req.user.id, {
+              orderId: existing.orderId,
+            });
+          }
+        }
+
+        const open = await payments.findOpenForUser(
+          req.user.id,
+          new Date(Date.now() - ttlMs).toISOString(),
+        );
+        if (open.some((record) => record.jobId !== job.id)) {
+          res.status(409).json({
+            ok: false,
+            code: 'PAYMENT_IN_PROGRESS',
+            error:
+              'A payment is already open for another document. Finish that payment first.',
+          });
+          return;
+        }
+
+        const reservation = freePageStatus(req.user, {
+          reservationTtlMs: ttlMs,
+        });
+        if (reservation.reserved) {
+          const held = await payments.get(reservation.reserved.orderId);
+          const heldAge = held
+            ? Date.now() - new Date(held.createdAt ?? 0).getTime()
+            : Infinity;
+          if (
+            !held ||
+            held.status !== 'created' ||
+            heldAge < 0 ||
+            heldAge > ttlMs
+          ) {
+            await users.clearFreePageReservation(req.user.id, {
+              orderId: reservation.reserved.orderId,
+            });
+          } else if (held.jobId !== job.id) {
+            res.status(409).json({
+              ok: false,
+              code: 'PAYMENT_IN_PROGRESS',
+              error:
+                'A payment is already open for another document. Finish that payment first.',
+            });
+            return;
+          }
+        }
+
+        const freshQuote = quoteFor(req.user, evaluation.totalPages);
+        if (freshQuote.amountPaise === 0) {
+          res.status(409).json({
+            ok: false,
+            code: 'PAYMENT_NOT_REQUIRED',
+            error: 'This print is free now. Try printing it again.',
+            quote: freshQuote,
+          });
+          return;
+        }
+
+        const receipt = `mgn_${Date.now().toString(36)}_${crypto
+          .randomBytes(4)
+          .toString('hex')}`.slice(0, 40);
+
+        let order;
+        try {
+          order = await razorpay.createOrder({
+            amountPaise: freshQuote.amountPaise,
+            currency: freshQuote.currency,
+            receipt,
+            notes: {
+              jobId: job.id,
+              userId: req.user.id,
+              pages: String(freshQuote.totalPages),
+              chargeablePages: String(freshQuote.chargeablePages),
+              freePageApplied: freshQuote.freePageApplied ? '1' : '0',
+            },
+          });
+        } catch (error) {
+          console.error(
+            '[payments] Razorpay order creation failed:',
+            error.message,
+          );
+          if (error.status === 401) {
+            console.error(
+              '[payments] Razorpay rejected the API credentials. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+            );
+          }
+          res.status(502).json({
+            ok: false,
+            code: 'PAYMENT_GATEWAY_ERROR',
+            error:
+              'Payments could not be started right now. Try again in a moment.',
+          });
+          return;
+        }
+
+        if (
+          !order?.id ||
+          Number(order.amount) !== freshQuote.amountPaise ||
+          String(order.currency || 'INR') !== freshQuote.currency
+        ) {
+          console.error('[payments] Razorpay returned an unexpected order.');
+          res.status(502).json({
+            ok: false,
+            code: 'PAYMENT_GATEWAY_ERROR',
+            error:
+              'Payments could not be started right now. Try again in a moment.',
+          });
+          return;
+        }
+
+        const record = await payments.create({
+          orderId: order.id,
+          userId: req.user.id,
+          jobId: job.id,
+          amountPaise: freshQuote.amountPaise,
+          currency: freshQuote.currency,
+          totalPages: freshQuote.totalPages,
+          chargeablePages: freshQuote.chargeablePages,
+          freePageApplied: freshQuote.freePageApplied,
+          receipt,
+        });
+
+        if (freshQuote.freePageApplied) {
+          const reserved = await users.reserveFreePage(req.user.id, {
+            orderId: order.id,
+            jobId: job.id,
+            reservationTtlMs: ttlMs,
+          });
+          if (!reserved) {
+            await payments.cancel(order.id);
+            res.status(409).json({
+              ok: false,
+              code: 'PAYMENT_IN_PROGRESS',
+              error:
+                'A payment is already open for another document. Finish that payment first.',
+            });
+            return;
+          }
+        }
+
+        res.status(201).json({
+          ok: true,
+          payment: {
+            orderId: record.orderId,
+            keyId: config.razorpayKeyId,
+            amountPaise: record.amountPaise,
+            currency: record.currency,
+            quote: freshQuote,
+            description: `Margin print · ${freshQuote.totalPages} page${freshQuote.totalPages === 1 ? '' : 's'}`,
+            prefill: {
+              name: req.user.name,
+              email: req.user.email,
+            },
+          },
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.post(
+  '/api/payments/:orderId/cancel',
+  security.requireAppIntent,
+  async (req, res, next) => {
+    try {
+      const orderId = String(req.params.orderId ?? '').trim();
+      const record = await payments.get(orderId);
+      if (!record || record.userId !== req.user.id) {
+        res.status(404).json({ ok: false, error: 'That payment was not found.' });
+        return;
+      }
+      if (record.status === 'created') {
+        await payments.cancel(orderId);
+        await users.clearFreePageReservation(req.user.id, { orderId });
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.get('/api/history', async (req, res, next) => {
   try {
@@ -765,6 +1518,7 @@ app.get('/api/account', async (req, res, next) => {
       ok: true,
       account: security.publicUser(req.user),
       quota: await quotaForUser(req.user),
+      paywall: paywallFor(req.user),
     });
   } catch (error) {
     next(error);

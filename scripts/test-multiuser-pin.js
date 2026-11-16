@@ -23,6 +23,8 @@ process.env.MARGIN_PROXY_SECRET = '';
 process.env.MARGIN_PUBLIC_ORIGIN = '';
 process.env.MARGIN_PUBLIC_API_URL = '';
 process.env.MARGIN_OPEN_SIGNUP = 'false';
+process.env.RAZORPAY_KEY_ID = '';
+process.env.RAZORPAY_KEY_SECRET = '';
 
 console.log('[test] Starting Margin in an isolated test environment...');
 console.log(`[test] Data directory: ${TEST_DATA_DIR}`);
@@ -178,6 +180,8 @@ async function runTests() {
   });
   assert.equal(adminBootstrap.status, 200);
   assert.equal(adminBootstrap.json.account.role, 'admin');
+  assert.equal(adminBootstrap.json.paywall.ownerExempt, true);
+  assert.equal(adminBootstrap.json.paywall.pricePerPagePaise, 86);
   assert(
     Array.isArray(adminBootstrap.json.printers) &&
       adminBootstrap.json.printers.length <= 1,
@@ -312,6 +316,12 @@ async function runTests() {
   });
   assert.equal(memberBootstrap.status, 200);
   assert.equal(memberBootstrap.json.pinVerified, false);
+  assert.equal(memberBootstrap.json.paywall.ownerExempt, false);
+  assert.equal(memberBootstrap.json.paywall.freePageAvailable, true);
+  assert.equal(memberBootstrap.json.paywall.pricePerPagePaise, 86);
+  assert.equal(memberBootstrap.json.paywall.minimumChargePaise, 100);
+  assert.equal(memberBootstrap.json.paywall.enabled, false);
+  assert.equal(memberBootstrap.json.paywall.keyId, undefined);
   assert(
     memberBootstrap.json.printers.length <= 1,
     'A member should see at most the active printer',

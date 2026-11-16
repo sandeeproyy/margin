@@ -213,6 +213,10 @@ export function createUserStore({
       createdAt: now,
       lastLoginAt: null,
       sessionVersion: 1,
+      freePageUsedAt: null,
+      freePageReservedAt: null,
+      freePageReservedOrderId: null,
+      freePageReservedJobId: null,
     };
     users.push(user);
 
@@ -274,6 +278,10 @@ export function createUserStore({
         user.status = user.status === 'disabled' ? 'disabled' : 'active';
         user.sessionVersion = Number(user.sessionVersion) || 1;
         if (!user.createdAt) user.createdAt = new Date().toISOString();
+        user.freePageUsedAt = user.freePageUsedAt || null;
+        user.freePageReservedAt = user.freePageReservedAt || null;
+        user.freePageReservedOrderId = user.freePageReservedOrderId || null;
+        user.freePageReservedJobId = user.freePageReservedJobId || null;
       }
       invites = invites.filter((invite) => invite && typeof invite === 'object');
 
@@ -536,12 +544,71 @@ export function createUserStore({
     return users.length;
   }
 
+  async function reserveFreePage(
+    userId,
+    { orderId, jobId, reservationTtlMs = 30 * 60 * 1000 },
+  ) {
+    await load();
+    const user = users.find((entry) => entry.id === userId);
+    if (!user || user.role === 'admin' || user.freePageUsedAt) return false;
+
+    const now = Date.now();
+    const currentAt = new Date(user.freePageReservedAt ?? 0).getTime();
+    const heldByAnother =
+      user.freePageReservedOrderId &&
+      user.freePageReservedOrderId !== orderId &&
+      Number.isFinite(currentAt) &&
+      now - currentAt >= 0 &&
+      now - currentAt < reservationTtlMs;
+    if (heldByAnother) return false;
+
+    user.freePageReservedAt = new Date(now).toISOString();
+    user.freePageReservedOrderId = orderId;
+    user.freePageReservedJobId = jobId;
+    await persist();
+    return true;
+  }
+
+  async function clearFreePageReservation(userId, { orderId } = {}) {
+    await load();
+    const user = users.find((entry) => entry.id === userId);
+    if (!user) return false;
+    if (orderId && user.freePageReservedOrderId !== orderId) return false;
+    if (
+      !user.freePageReservedAt &&
+      !user.freePageReservedOrderId &&
+      !user.freePageReservedJobId
+    ) {
+      return false;
+    }
+    user.freePageReservedAt = null;
+    user.freePageReservedOrderId = null;
+    user.freePageReservedJobId = null;
+    await persist();
+    return true;
+  }
+
+  async function markFreePageUsed(userId, { jobId, orderId = null } = {}) {
+    await load();
+    const user = users.find((entry) => entry.id === userId);
+    if (!user || user.role === 'admin' || user.freePageUsedAt) return false;
+    user.freePageUsedAt = new Date().toISOString();
+    user.freePageUsedJobId = jobId ?? null;
+    user.freePageUsedOrderId = orderId ?? null;
+    user.freePageReservedAt = null;
+    user.freePageReservedOrderId = null;
+    user.freePageReservedJobId = null;
+    await persist();
+    return true;
+  }
+
   function getBootstrap() {
     return bootstrap;
   }
 
   return {
     changePassword,
+    clearFreePageReservation,
     countUsers,
     createInvite,
     createUser,
@@ -550,7 +617,9 @@ export function createUserStore({
     getBootstrap,
     listInvites,
     listUsers,
+    markFreePageUsed,
     publicUser,
+    reserveFreePage,
     resetUserPassword,
     revokeInvite,
     setUserStatus,

@@ -96,6 +96,7 @@ for (const id of [
   'sheetError',
   'printSummary',
   'sheetEstimate',
+  'sheetPrice',
   'sheetQuota',
   'printButton',
   'printButtonLabel',
@@ -119,6 +120,7 @@ for (const id of [
   'accountDialogRole',
   'accountQuotaText',
   'accountSince',
+  'accountPaywallText',
   'passwordForm',
   'currentPassword',
   'newPassword',
@@ -228,6 +230,10 @@ const state = {
   },
   account: null,
   quota: { dailyPages: 120, usedPages: 0, remainingPages: 120 },
+  paywall: null,
+  payment: null,
+  openOrder: null,
+  checkoutBusy: false,
   authMode: 'login',
   printers: [],
   defaultPrinterId: null,
@@ -369,6 +375,112 @@ function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Paywall                                                             */
+/* ------------------------------------------------------------------ */
+
+let razorpayScriptPromise = null;
+
+function formatMoney(paise) {
+  const value = Math.max(0, Number(paise) || 0) / 100;
+  return Number.isInteger(value) ? `₹${value}` : `₹${value.toFixed(2)}`;
+}
+
+function pricingForPages(totalPages) {
+  const paywall = state.paywall;
+  if (!paywall) return null;
+  const pages = Math.max(0, Math.floor(Number(totalPages) || 0));
+  if (paywall.ownerExempt) {
+    return {
+      ownerExempt: true,
+      freeApplied: false,
+      chargeable: 0,
+      amountPaise: 0,
+      available: false,
+    };
+  }
+  const freeApplied = Boolean(paywall.freePageAvailable) && pages > 0;
+  const chargeable = Math.max(0, pages - (freeApplied ? 1 : 0));
+  const amountPaise =
+    chargeable > 0
+      ? Math.max(
+          chargeable * Number(paywall.pricePerPagePaise || 0),
+          Number(paywall.minimumChargePaise || 100),
+        )
+      : 0;
+  return {
+    ownerExempt: false,
+    freeApplied,
+    chargeable,
+    amountPaise,
+    available: true,
+  };
+}
+
+function paywallSummaryText() {
+  const paywall = state.paywall;
+  if (!paywall) return '—';
+  if (paywall.ownerExempt) return 'Owner · prints free';
+  if (paywall.freePageReserved) return 'A payment is open';
+  if (!paywall.enabled) return 'Paid printing not set up';
+  if (paywall.freePageAvailable) {
+    return `First page free · then ${formatMoney(paywall.pricePerPagePaise)}/page`;
+  }
+  return `${formatMoney(paywall.pricePerPagePaise)} per page`;
+}
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (razorpayScriptPromise) return razorpayScriptPromise;
+
+  razorpayScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Razorpay) resolve(window.Razorpay);
+      else {
+        razorpayScriptPromise = null;
+        reject(new Error('The payment window could not be opened.'));
+      }
+    };
+    script.onerror = () => {
+      razorpayScriptPromise = null;
+      reject(new Error('The payment window could not be opened.'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return razorpayScriptPromise;
+}
+
+function paidRetryForCurrentJob() {
+  return Boolean(
+    state.payment?.orderId &&
+      state.job &&
+      state.payment.jobId === state.job.id,
+  );
+}
+
+async function cancelPaymentOrder(orderId) {
+  if (!orderId) return;
+  try {
+    await api(`/api/payments/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+    });
+  } catch {
+    // The server expires abandoned orders on its own.
+  }
+}
+
+async function cancelOpenOrder() {
+  const orderId = state.openOrder?.orderId;
+  if (!orderId) return;
+  state.openOrder = null;
+  await cancelPaymentOrder(orderId);
+  void refreshQuota();
 }
 
 function normalizeDashes(value) {
@@ -780,6 +892,10 @@ async function handleLogout() {
     state.account = null;
     state.history = [];
     state.printers = [];
+    state.paywall = null;
+    state.payment = null;
+    state.openOrder = null;
+    state.checkoutBusy = false;
     showAuth('You are signed out.');
   }
 }
@@ -803,6 +919,7 @@ function applyBootstrap(data) {
 
   state.account = data.account ?? null;
   state.quota = data.quota ?? state.quota;
+  state.paywall = data.paywall ?? null;
   state.pinVerified = Boolean(data.pinVerified);
   state.printerError = (data.printers ?? []).length
     ? null
@@ -842,6 +959,11 @@ function renderAccountChrome() {
   refs.accountDialogRole.textContent = role;
   refs.accountSince.textContent = formatMonthYear(account?.createdAt);
   refs.accountQuotaText.textContent = `${state.quota.usedPages} of ${state.quota.dailyPages} pages used today`;
+  if (refs.accountPaywallText) {
+    refs.accountPaywallText.textContent = paywallSummaryText();
+    const fact = refs.accountPaywallText.closest('div');
+    if (fact) fact.hidden = !state.paywall;
+  }
 
   updateQuotaChrome();
 }
@@ -875,7 +997,13 @@ async function refreshQuota() {
     }
     if (data.account) {
       state.account = data.account;
+    }
+    if (data.paywall) {
+      state.paywall = data.paywall;
+    }
+    if (data.account || data.paywall) {
       renderAccountChrome();
+      if (state.job && state.settings) updatePrintSummary();
     }
   } catch {
     // The next full load will refresh it.
@@ -1906,10 +2034,13 @@ function updatePrintSummary() {
   const printer = getSelectedPrinter();
   const job = state.job;
   const settings = state.settings;
+  const paywall = state.paywall;
+  const paidRetry = paidRetryForCurrentJob();
 
   if (!printer || !job || !settings) {
     refs.printSummary.textContent = 'No printer connected';
     refs.sheetEstimate.textContent = '—';
+    refs.sheetPrice.hidden = true;
     refs.printButton.disabled = true;
     refs.printButtonLabel.textContent = 'No printer available';
     refs.sheetQuota.textContent = `${state.quota.remainingPages} pages left today`;
@@ -1928,6 +2059,11 @@ function updatePrintSummary() {
   const pagesNeeded = pages * settings.copies;
   const remaining = Math.max(0, Number(state.quota.remainingPages) || 0);
   const overQuota = pagesNeeded > remaining;
+  const pricing = pricingForPages(pagesNeeded);
+  const reserved = Boolean(paywall?.freePageReserved) && !paidRetry;
+  const paymentsBlocked = Boolean(
+    paywall && pricing && pricing.amountPaise > 0 && !paywall.enabled,
+  );
 
   if (!range.ok) {
     refs.printSummary.textContent = 'Check the page range';
@@ -1944,12 +2080,54 @@ function updatePrintSummary() {
     : `${remaining} ${remaining === 1 ? 'page' : 'pages'} left today`;
   refs.sheetQuota.classList.toggle('is-over', overQuota);
 
+  refs.sheetPrice.hidden = !paywall;
+  refs.sheetPrice.classList.remove('is-paid', 'is-warning');
+  if (paywall) {
+    if (paidRetry) {
+      refs.sheetPrice.textContent = 'Payment received · finish printing';
+    } else if (pricing.ownerExempt) {
+      refs.sheetPrice.textContent = 'Owner account · no charge';
+    } else if (reserved) {
+      refs.sheetPrice.textContent =
+        'A payment is already open · continue it to print';
+      refs.sheetPrice.classList.add('is-warning');
+    } else if (!range.ok || pages < 1) {
+      refs.sheetPrice.textContent = '—';
+    } else if (paymentsBlocked) {
+      refs.sheetPrice.textContent =
+        'Paid printing is not set up yet · ask the owner';
+      refs.sheetPrice.classList.add('is-warning');
+    } else if (pricing.freeApplied && pricing.amountPaise === 0) {
+      refs.sheetPrice.textContent = 'First page free';
+    } else if (pricing.freeApplied) {
+      refs.sheetPrice.textContent = `First page free · ${formatMoney(pricing.amountPaise)} for ${plural(pricing.chargeable, 'more page')}`;
+      refs.sheetPrice.classList.add('is-paid');
+    } else if (pricing.amountPaise > 0) {
+      refs.sheetPrice.textContent =
+        pricing.chargeable === 1 &&
+        Number(paywall.minimumChargePaise) > Number(paywall.pricePerPagePaise)
+          ? `${formatMoney(pricing.amountPaise)} minimum for one page · ${formatMoney(paywall.pricePerPagePaise)}/page after`
+          : `${formatMoney(pricing.amountPaise)} · ${plural(pricing.chargeable, 'page')} at ${formatMoney(paywall.pricePerPagePaise)}`;
+      refs.sheetPrice.classList.add('is-paid');
+    } else {
+      refs.sheetPrice.textContent = 'No charge';
+    }
+  }
+
   let label = 'Print document';
   if (state.submittingPrint) label = 'Sending…';
+  else if (state.checkoutBusy) label = 'Opening payment…';
   else if (!printer.online) label = 'Printer not connected';
   else if (!range.ok) label = 'Check the page range';
   else if (overQuota) label = 'Over today’s allowance';
-  else if (pages) label = `Print ${plural(pages, 'page')}`;
+  else if (paymentsBlocked) label = 'Paid printing unavailable';
+  else if (reserved) label = 'Continue payment';
+  else if (paidRetry) label = 'Finish paid print';
+  else if (pricing && pricing.amountPaise > 0) {
+    label = `Pay ${formatMoney(pricing.amountPaise)} & print`;
+  } else if (pagesNeeded) {
+    label = `Print ${plural(pagesNeeded, 'page')}`;
+  }
 
   refs.printButtonLabel.textContent = label;
   refs.printButton.disabled =
@@ -1957,8 +2135,13 @@ function updatePrintSummary() {
     pages < 1 ||
     !printer.online ||
     overQuota ||
-    state.submittingPrint;
-  refs.printButton.classList.toggle('is-busy', state.submittingPrint);
+    state.submittingPrint ||
+    state.checkoutBusy ||
+    paymentsBlocked;
+  refs.printButton.classList.toggle(
+    'is-busy',
+    state.submittingPrint || state.checkoutBusy,
+  );
 }
 
 function makeNotice(tone, title, body, action) {
@@ -2076,6 +2259,11 @@ function openPrintDialog(job) {
   state.pendingJobId = job.id;
   state.rangeMode = 'all';
   state.submittingPrint = false;
+  state.checkoutBusy = false;
+  if (state.payment && state.payment.jobId !== job.id) state.payment = null;
+  if (state.openOrder && state.openOrder.jobId !== job.id) {
+    void cancelOpenOrder();
+  }
   refs.rangeInput.value = '';
   refs.rangeError.textContent = '';
   refs.rangeInput.removeAttribute('aria-invalid');
@@ -2136,6 +2324,10 @@ function closePrintDialog(immediate = false) {
     return;
   }
 
+  if (!state.submittingPrint && !state.checkoutBusy && state.openOrder) {
+    void cancelOpenOrder();
+  }
+
   if (immediate) {
     if (state.closingSheet) {
       window.clearTimeout(state.closingSheet);
@@ -2170,8 +2362,174 @@ function stepCopies(direction) {
   renderSheetWarnings();
 }
 
-async function submitPrint() {
-  if (!state.job || !state.settings || state.submittingPrint) return;
+function buildPrintBody() {
+  const printer = getSelectedPrinter();
+  if (!printer || !state.settings) return null;
+  return {
+    printerId: printer.id,
+    copies: state.settings.copies,
+    color: state.settings.color,
+    quality: state.settings.quality,
+    paperId: state.settings.paperId,
+    orientation: state.settings.orientation,
+    sides: state.settings.sides,
+    scale: state.settings.scale,
+    collate: state.settings.collate,
+    sourceId: state.settings.sourceId,
+    pageRange:
+      state.rangeMode === 'custom'
+        ? normalizeDashes(refs.rangeInput.value).trim() || 'all'
+        : 'all',
+  };
+}
+
+async function beginCheckout() {
+  if (state.checkoutBusy || !state.job || !state.settings) return;
+
+  const printer = getSelectedPrinter();
+  if (!printer || !printer.online) {
+    refs.sheetError.textContent =
+      'The printer is not connected right now. Check that it is switched on, then try again.';
+    return;
+  }
+
+  const range = currentRange();
+  if (!range.ok) {
+    refs.sheetError.textContent = range.error;
+    return;
+  }
+
+  const body = buildPrintBody();
+  if (!body) return;
+
+  state.checkoutBusy = true;
+  refs.sheetError.textContent = '';
+  updatePrintSummary();
+
+  try {
+    const data = await api(
+      `/api/jobs/${encodeURIComponent(state.job.id)}/payment-order`,
+      { method: 'POST', body },
+    );
+    const payment = data?.payment;
+    if (!payment?.orderId) {
+      throw new Error('The payment could not be started. Try again.');
+    }
+
+    if (payment.paid) {
+      state.checkoutBusy = false;
+      state.openOrder = null;
+      state.payment = {
+        jobId: state.job.id,
+        orderId: payment.orderId,
+        amountPaise: payment.amountPaise,
+      };
+      updatePrintSummary();
+      return submitPrint({ razorpay_order_id: payment.orderId });
+    }
+
+    state.openOrder = { orderId: payment.orderId, jobId: state.job.id };
+    await loadRazorpayCheckout();
+    openRazorpayCheckout(payment);
+    state.checkoutBusy = false;
+    updatePrintSummary();
+  } catch (error) {
+    state.checkoutBusy = false;
+    if (isAuthenticatedError(error)) {
+      showAuth('Please sign in again before paying.');
+      return;
+    }
+    refs.sheetError.textContent = describeError(
+      error,
+      'Payments are unavailable right now. Try again in a moment.',
+    );
+    updatePrintSummary();
+    if (error.status === 409 || error.status === 502 || error.status === 503) {
+      toast(error.message, { error: true, duration: 6000 });
+    }
+  }
+}
+
+function openRazorpayCheckout(payment) {
+  const jobId = state.job?.id;
+  if (!jobId || !window.Razorpay) {
+    throw new Error('The payment window could not be opened.');
+  }
+
+  const checkout = new window.Razorpay({
+    key: payment.keyId,
+    amount: payment.amountPaise,
+    currency: payment.currency || 'INR',
+    name: 'Margin',
+    description: payment.description || 'Document printing',
+    order_id: payment.orderId,
+    prefill: payment.prefill || {},
+    notes: { jobId },
+    theme: { color: '#ef542f' },
+    modal: {
+      escape: true,
+      confirm_close: true,
+      ondismiss: () => {
+        if (
+          state.payment?.paymentId &&
+          state.payment.orderId === payment.orderId
+        ) {
+          return;
+        }
+        state.openOrder = null;
+        state.payment = null;
+        void cancelPaymentOrder(payment.orderId);
+        refs.sheetError.textContent =
+          'Payment cancelled. Nothing was charged.';
+        updatePrintSummary();
+        void refreshQuota();
+      },
+    },
+    handler: (response) => {
+      if (
+        !response?.razorpay_payment_id ||
+        !response?.razorpay_signature
+      ) {
+        refs.sheetError.textContent =
+          'The payment could not be confirmed. Try again.';
+        updatePrintSummary();
+        return;
+      }
+      state.openOrder = null;
+      state.payment = {
+        jobId,
+        orderId: response.razorpay_order_id || payment.orderId,
+        paymentId: response.razorpay_payment_id,
+        signature: response.razorpay_signature,
+        amountPaise: payment.amountPaise,
+      };
+      updatePrintSummary();
+      void submitPrint({
+        razorpay_order_id: state.payment.orderId,
+        razorpay_payment_id: state.payment.paymentId,
+        razorpay_signature: state.payment.signature,
+      });
+    },
+  });
+
+  checkout.on('payment.failed', () => {
+    refs.sheetError.textContent =
+      'The payment did not go through. You can try again.';
+    updatePrintSummary();
+  });
+
+  checkout.open();
+}
+
+async function submitPrint(payment = null) {
+  if (
+    !state.job ||
+    !state.settings ||
+    state.submittingPrint ||
+    state.checkoutBusy
+  ) {
+    return;
+  }
 
   const pinOk = await ensurePinVerified();
   if (!pinOk) return;
@@ -2198,6 +2556,10 @@ async function submitPrint() {
     return;
   }
 
+  const body = buildPrintBody();
+  if (!body) return;
+  if (payment) Object.assign(body, payment);
+
   refs.sheetError.textContent = '';
   state.submittingPrint = true;
   updatePrintSummary();
@@ -2206,30 +2568,18 @@ async function submitPrint() {
   try {
     const data = await api(`/api/jobs/${encodeURIComponent(state.job.id)}/print`, {
       method: 'POST',
-      body: {
-        printerId: printer.id,
-        copies: state.settings.copies,
-        color: state.settings.color,
-        quality: state.settings.quality,
-        paperId: state.settings.paperId,
-        orientation: state.settings.orientation,
-        sides: state.settings.sides,
-        scale: state.settings.scale,
-        collate: state.settings.collate,
-        sourceId: state.settings.sourceId,
-        pageRange:
-          state.rangeMode === 'custom'
-            ? normalizeDashes(refs.rangeInput.value).trim() || 'all'
-            : 'all',
-      },
+      body,
     });
 
     state.submittingPrint = false;
+    state.payment = null;
+    state.openOrder = null;
     refs.printButton.classList.remove('is-busy');
     writeStorage(sessionStorage, STORAGE_KEYS.pendingJob, null);
     state.pendingJobId = null;
     closePrintDialog(true);
     showStatus(data.job?.id || state.job.id, null);
+    void refreshQuota();
   } catch (error) {
     state.submittingPrint = false;
     refs.printButton.classList.remove('is-busy');
@@ -2241,8 +2591,24 @@ async function submitPrint() {
       state.pinVerified = false;
       const retryPin = await openPinDialog();
       if (retryPin) {
-        return submitPrint();
+        return submitPrint(payment);
       }
+    }
+    if (
+      error.data?.code === 'PAYMENT_REQUIRED' ||
+      error.data?.code === 'PAYMENT_IN_PROGRESS'
+    ) {
+      if (payment) {
+        state.payment = null;
+        refs.sheetError.textContent = describeError(
+          error,
+          'That payment could not be used. Try again.',
+        );
+        updatePrintSummary();
+        return;
+      }
+      updatePrintSummary();
+      return beginCheckout();
     }
     refs.sheetError.textContent = describeError(
       error,
