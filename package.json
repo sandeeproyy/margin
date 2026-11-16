@@ -1,0 +1,31 @@
+{
+  "name": "margin-print",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A tiny print room for the printer on your desk.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "share": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/share.ps1",
+    "tray": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tray.ps1",
+    "tray:start": "wscript scripts/start-hidden.vbs",
+    "tray:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1",
+    "startup:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-startup.ps1",
+    "startup:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall-startup.ps1",
+    "test:print": "node scripts/test-print.js"
+  },
+  "dependencies": {
+    "compression": "^1.8.2",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
+    "pdf-to-img": "^7.0.2",
+    "pdfkit": "^0.17.2",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.5"
+  }
+}

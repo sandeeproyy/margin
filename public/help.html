@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f1ede3">
+  <meta name="description" content="How to reach your Margin print room from anywhere, safely.">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Margin">
+  <meta name="format-detection" content="telephone=no">
+  <title>Field notes — Margin</title>
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css?v=3">
+</head>
+<body>
+  <a class="skip-link" href="#notes">Skip to the notes</a>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="reg-mark reg-mark-a" aria-hidden="true"></div>
+  <div class="reg-mark reg-mark-b" aria-hidden="true"></div>
+
+  <main id="notes" class="help-shell">
+    <header class="help-top">
+      <a class="wordmark" href="/" aria-label="Margin home">
+        <svg class="wordmark-icon" viewBox="0 0 26 26" aria-hidden="true">
+          <circle cx="13" cy="13" r="8.2"></circle>
+          <path d="M13 0v7M13 19v7M0 13h7M19 13h7"></path>
+        </svg>
+        <span>margin</span>
+      </a>
+      <a class="text-button help-back" href="/">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H6M11 6l-6 6 6 6"></path></svg>
+        Back to the room
+      </a>
+    </header>
+
+    <section class="help-hero" aria-labelledby="helpTitle">
+      <p class="eyebrow"><span>Field notes</span><span class="eyebrow-rule"></span><span>04</span></p>
+      <h1 id="helpTitle">From anywhere<br>to your <em>desk.</em></h1>
+      <p class="lede">Margin lives on the laptop. To print from outside your home Wi-Fi, you need a safe way back to that laptop. Two routes work beautifully: a Cloudflare Tunnel, or a private Tailscale network.</p>
+      <div class="help-facts" aria-label="At a glance">
+        <div class="help-fact"><span class="micro">Set-up</span><strong>About five minutes</strong></div>
+        <div class="help-fact"><span class="micro">Cost</span><strong>Free to start</strong></div>
+        <div class="help-fact"><span class="micro">The lock</span><strong>PIN + HTTPS</strong></div>
+      </div>
+    </section>
+
+    <div class="help-grid">
+      <nav class="help-toc" aria-label="On this page">
+        <span class="micro">The short list</span>
+        <a href="#same-wifi"><span>01</span> Same Wi-Fi</a>
+        <a href="#cloudflare"><span>02</span> Cloudflare Tunnel</a>
+        <a href="#tailscale"><span>03</span> Tailscale</a>
+        <a href="#keep-running"><span>04</span> Keep it running</a>
+        <a href="#snags"><span>05</span> When something sticks</a>
+      </nav>
+
+      <article class="help-article">
+        <section id="same-wifi" class="help-section">
+          <div class="help-section-head">
+            <span class="help-number">01</span>
+            <h2>First, the same Wi-Fi.</h2>
+          </div>
+          <p>Before reaching for a tunnel, make sure the simple path works. Start Margin on the laptop, then open the address it prints in the terminal from your phone. They need to be on the same network.</p>
+          <div class="help-code">
+            <span class="help-code-label">On the laptop</span>
+            <code>npm start</code>
+          </div>
+          <p>The terminal shows a local address, a mobile address, and a QR code. Scan the code, or type the mobile address into your phone. The first time, Windows may ask whether Node.js can talk on the network — allow <strong>private networks</strong>, not public ones.</p>
+          <div class="help-callout">
+            <span aria-hidden="true">↳</span>
+            <p><strong>Same Wi-Fi only.</strong> The QR code stops working as soon as your phone leaves the house, or the laptop changes networks.</p>
+          </div>
+        </section>
+
+        <section id="cloudflare" class="help-section">
+          <div class="help-section-head">
+            <span class="help-number">02</span>
+            <h2>The simplest way out: <em>Cloudflare Tunnel.</em></h2>
+          </div>
+          <p>A Cloudflare quick tunnel gives the laptop a temporary HTTPS address on the public internet. Your router stays untouched, and your phone can print from a train, an office, or a different country. Cloudflare connects outbound to the laptop; nothing is opened in your firewall.</p>
+
+          <ol class="help-steps">
+            <li class="help-step">
+              <span class="help-step-index">1</span>
+              <div>
+                <strong>Install cloudflared on the laptop.</strong>
+                <p>Open PowerShell and run the command below. If you already have it, skip ahead.</p>
+              </div>
+            </li>
+          </ol>
+          <div class="help-code">
+            <span class="help-code-label">One-time install</span>
+            <code>winget install --id Cloudflare.cloudflared</code>
+          </div>
+
+          <ol class="help-steps" start="2">
+            <li class="help-step">
+              <span class="help-step-index">2</span>
+              <div>
+                <strong>Start the print room.</strong>
+                <p>Leave this terminal window open. This is the part holding the printer.</p>
+              </div>
+            </li>
+          </ol>
+          <div class="help-code">
+            <span class="help-code-label">Terminal one</span>
+            <code>npm start</code>
+          </div>
+
+          <ol class="help-steps" start="3">
+            <li class="help-step">
+              <span class="help-step-index">3</span>
+              <div>
+                <strong>Open the tunnel in a second terminal.</strong>
+                <p>The included share script starts cloudflared for you and checks that the room is awake first.</p>
+              </div>
+            </li>
+          </ol>
+          <div class="help-code">
+            <span class="help-code-label">Terminal two</span>
+            <code>npm run share</code>
+          </div>
+          <p>Look for a line like <code class="inline-code">https://quiet-paper-1234.trycloudflare.com</code>. Open that exact address on your phone, enter the PIN, and print. Keep both terminal windows open while you need the room.</p>
+
+          <div class="help-callout help-callout--warm">
+            <span aria-hidden="true">!</span>
+            <p><strong>Quick tunnels are temporary.</strong> The address changes when cloudflared restarts. For a permanent address, create a named Cloudflare Tunnel with your own domain in the Cloudflare dashboard. The commands are the same; the URL just stops changing.</p>
+          </div>
+
+          <div class="help-callout">
+            <span aria-hidden="true">↳</span>
+            <p><strong>Treat the link like a key.</strong> Send the URL and the PIN separately, and only to people you would let into the room. This is a one-user print room, not a multi-user service.</p>
+          </div>
+        </section>
+
+        <section id="tailscale" class="help-section">
+          <div class="help-section-head">
+            <span class="help-number">03</span>
+            <h2>The private way: <em>Tailscale.</em></h2>
+          </div>
+          <p>If you only need to reach the printer from your own devices, Tailscale is the quieter option. It builds an encrypted private network between the laptop and your phone. No public URL exists, and nothing is exposed to the open internet.</p>
+          <ol class="help-steps">
+            <li class="help-step">
+              <span class="help-step-index">1</span>
+              <div>
+                <strong>Install Tailscale on the laptop and the phone.</strong>
+                <p>Sign in to the same account on both. The Tailscale app shows the laptop’s private address and name.</p>
+              </div>
+            </li>
+            <li class="help-step">
+              <span class="help-step-index">2</span>
+              <div>
+                <strong>Start Margin on the laptop.</strong>
+                <p>Then, on the phone, open the laptop’s Tailscale address with <code class="inline-code">:3000</code> on the end.</p>
+              </div>
+            </li>
+          </ol>
+          <div class="help-code">
+            <span class="help-code-label">On the phone</span>
+            <code>http://your-laptop-name:3000</code>
+          </div>
+          <p>If the phone cannot connect, make sure Tailscale is switched on for both devices, and that Node.js is allowed through Windows Firewall on private networks. Tailscale’s own encryption protects the trip; the PIN still guards the room itself.</p>
+          <div class="help-callout">
+            <span aria-hidden="true">↳</span>
+            <p><strong>Cloudflare or Tailscale?</strong> Cloudflare is easier to send to a family member. Tailscale is tidier when the only person printing is you.</p>
+          </div>
+        </section>
+
+        <section id="keep-running" class="help-section">
+          <div class="help-section-head">
+            <span class="help-number">04</span>
+            <h2>Keep the room <em>open.</em></h2>
+          </div>
+          <p>The laptop is doing the work. It has to be awake, online, and running Margin when a document arrives. Plug it in, and check its sleep settings: if the lid closes and Windows sleeps, the print room goes dark with it.</p>
+          <div class="help-grid-facts">
+            <div class="help-fact"><span class="micro">Printer</span><strong>On, loaded, USB connected</strong></div>
+            <div class="help-fact"><span class="micro">Laptop</span><strong>Awake and on the network</strong></div>
+            <div class="help-fact"><span class="micro">Margin</span><strong>Running in a terminal</strong></div>
+            <div class="help-fact"><span class="micro">Tunnel</span><strong>Left open if printing remotely</strong></div>
+          </div>
+          <p>To start Margin automatically when you sign in to Windows, put a shortcut to a small <code class="inline-code">start-margin.cmd</code> file in your Startup folder. The README has the exact steps. Until then, <code class="inline-code">npm start</code> is the whole ritual.</p>
+          <div class="help-callout">
+            <span aria-hidden="true">↳</span>
+            <p><strong>Files do not linger.</strong> Uploaded documents are removed after about two hours. The history keeps only the file name, settings, and result. The Windows print queue is separate, so clear it if an old job jams the line.</p>
+          </div>
+        </section>
+
+        <section id="snags" class="help-section">
+          <div class="help-section-head">
+            <span class="help-number">05</span>
+            <h2>When something <em>sticks.</em></h2>
+          </div>
+
+          <details class="help-faq">
+            <summary>Nothing comes out, but the app says “sent”.</summary>
+            <p>The app confirms that Windows accepted the job, not that ink met paper. Open <strong>Settings → Bluetooth &amp; devices → Printers &amp; scanners → EPSON L3110 Series → Open print queue</strong>. If a job is paused or stuck, cancel it and try a one-page test. Check paper, ink levels, and that the printer is not offline.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>A Word, Excel, or PowerPoint file will not convert.</summary>
+            <p>Office conversion uses the desktop Microsoft Office already installed on the laptop. Microsoft 365 in a browser is not enough. If conversion keeps failing, open the file in Office, choose <strong>File → Save As → PDF</strong>, and upload the PDF instead.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>The phone says the connection is not private.</summary>
+            <p>Use the full <code class="inline-code">https://</code> address printed by cloudflared, not the laptop’s local IP. If you are on the same Wi-Fi, the plain <code class="inline-code">http://</code> address is expected and fine; browsers only warn on public addresses without a certificate.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>What is the print authorization PIN?</summary>
+            <p>The print PIN is a shared code (default <code class="inline-code">292929</code>) provided by the print room owner. It ensures that only authorized people can send physical jobs to paper. Once entered, your session stays authorized for 30 minutes.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>Can the administrator view my documents?</summary>
+            <p>No. Margin is built with privacy-first isolation. Each member has their own independent history and quota. Even the print room administrator cannot view, download, or access other users' documents.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>The quick tunnel address changed again.</summary>
+            <p>That is how quick tunnels work. Either restart <code class="inline-code">npm run share</code> and share the new address, or set up a named Cloudflare Tunnel with a domain so the address stays the same.</p>
+          </details>
+
+          <details class="help-faq">
+            <summary>The print queue is jammed.</summary>
+            <p>Cancel the stuck job in the Windows queue. If the queue refuses to clear, restart the Print Spooler service from <strong>Services</strong>, or run <code class="inline-code">Restart-Service Spooler</code> in an administrator PowerShell window. Then print a single test page.</p>
+          </details>
+        </section>
+
+        <footer class="help-footer">
+          <span>Margin print co. <span class="footer-dot">·</span> Field notes</span>
+          <a class="text-button" href="/">Back to the room</a>
+        </footer>
+      </article>
+    </div>
+  </main>
+
+  <noscript>
+    <div class="noscript">Margin needs JavaScript to talk to your printer.</div>
+  </noscript>
+</body>
+</html>

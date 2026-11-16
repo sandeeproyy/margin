@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f1ede3">
+  <meta name="description" content="Send a document from anywhere to the printer by your desk.">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Margin">
+  <meta name="format-detection" content="telephone=no">
+  <title>Margin — from anywhere to paper</title>
+  <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css?v=4">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="reg-mark reg-mark-a" aria-hidden="true"></div>
+  <div class="reg-mark reg-mark-b" aria-hidden="true"></div>
+
+  <div id="boot" class="boot" aria-label="Opening Margin">
+    <div class="boot-word">margin<span>.</span></div>
+    <span class="boot-line" aria-hidden="true"></span>
+  </div>
+
+  <section id="authView" class="auth" hidden>
+    <header class="auth-top">
+      <div class="wordmark" aria-label="Margin">
+        <svg class="wordmark-icon" viewBox="0 0 26 26" aria-hidden="true">
+          <circle cx="13" cy="13" r="8.2"></circle>
+          <path d="M13 0v7M13 19v7M0 13h7M19 13h7"></path>
+        </svg>
+        <span>margin</span>
+      </div>
+      <span class="micro">A private print room</span>
+    </header>
+
+    <div class="auth-grid">
+      <div class="auth-copy">
+        <p class="eyebrow"><span>From anywhere</span><span class="eyebrow-rule"></span><span>To paper</span></p>
+        <h1>Send a page.<br>Hear the <em>tray.</em></h1>
+        <p class="lede">Sign in to send a document to the printer by your desk. Your files go straight there, and only you can see what you have printed.</p>
+        <div class="auth-side-note">
+          <span class="rule"></span>
+          <span>Invitation only.<br>Files are cleared from the laptop automatically.</span>
+        </div>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-card-head">
+          <span class="micro">Your account / 01</span>
+          <span class="status-light status-light--muted" aria-hidden="true"></span>
+        </div>
+
+        <div id="authTabs" class="segmented segmented--compact auth-tabs" role="group" aria-label="Account access">
+          <button type="button" data-auth-mode="login" aria-pressed="true">Sign in</button>
+          <button type="button" data-auth-mode="register" aria-pressed="false">Create account</button>
+        </div>
+
+        <form id="loginForm" class="auth-form" novalidate>
+          <label class="field-label" for="loginEmail">Email</label>
+          <input id="loginEmail" class="text-input" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" aria-describedby="loginError" required>
+
+          <label class="field-label" for="loginPassword">Password</label>
+          <input id="loginPassword" class="text-input" type="password" name="password" autocomplete="current-password" placeholder="Your password" aria-describedby="loginError" required>
+
+          <button id="loginButton" class="button button--ink button--wide" type="submit">
+            <span>Sign in</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+          </button>
+          <p id="loginError" class="form-error" role="alert"></p>
+          <p class="auth-help">Use the email and password you set up when you joined.</p>
+        </form>
+
+        <form id="registerForm" class="auth-form" hidden novalidate>
+          <label class="field-label" for="registerName">Your name</label>
+          <input id="registerName" class="text-input" type="text" name="name" autocomplete="name" placeholder="Your name" maxlength="80" required>
+
+          <label class="field-label" for="registerEmail">Email</label>
+          <input id="registerEmail" class="text-input" type="email" name="email" autocomplete="email" inputmode="email" placeholder="you@example.com" required>
+
+          <div id="inviteField">
+            <label class="field-label" for="registerInvite">Invitation code</label>
+            <input id="registerInvite" class="text-input" type="text" name="invite" autocomplete="one-time-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" spellcheck="false" required>
+          </div>
+
+          <label class="field-label" for="registerPassword">Password</label>
+          <input id="registerPassword" class="text-input" type="password" name="password" autocomplete="new-password" placeholder="At least 10 characters" minlength="10" required>
+
+          <label class="field-label" for="registerConfirm">Repeat password</label>
+          <input id="registerConfirm" class="text-input" type="password" name="confirm" autocomplete="new-password" placeholder="One more time" required>
+
+          <button id="registerButton" class="button button--ink button--wide" type="submit">
+            <span>Create my account</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+          </button>
+          <p id="registerError" class="form-error" role="alert"></p>
+          <p id="registerHelp" class="auth-help">Margin is invitation only. Use the code the owner shared with you.</p>
+        </form>
+      </div>
+    </div>
+
+    <footer class="auth-footer">
+      <span>Margin print co.</span>
+      <span class="auth-footer-mark" aria-hidden="true">✳</span>
+      <span>Made for the printer on your desk.</span>
+    </footer>
+  </section>
+
+  <main id="main" class="shell" hidden>
+    <header class="topbar">
+      <a class="wordmark" href="/" aria-label="Margin home">
+        <svg class="wordmark-icon" viewBox="0 0 26 26" aria-hidden="true">
+          <circle cx="13" cy="13" r="8.2"></circle>
+          <path d="M13 0v7M13 19v7M0 13h7M19 13h7"></path>
+        </svg>
+        <span>margin</span>
+      </a>
+
+      <div class="topbar-actions">
+        <button id="quotaChip" class="quota-chip" type="button" aria-label="Open your account and page allowance">
+          <span class="micro">Today</span>
+          <span id="quotaChipText">— pages</span>
+        </button>
+
+        <button id="printerPill" class="printer-pill" type="button" aria-haspopup="dialog" aria-controls="printerDialog">
+          <span id="printerDot" class="status-light status-light--loading" aria-hidden="true"></span>
+          <span id="printerPillText">Finding printer</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+        </button>
+
+        <div id="accountMenuWrap" class="account-menu-wrap">
+          <button id="accountButton" class="account-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="accountMenu" aria-label="Open account menu">
+            <span id="accountAvatar" class="account-avatar" aria-hidden="true">M</span>
+            <span id="accountName" class="account-name">Account</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+          </button>
+
+          <div id="accountMenu" class="account-menu" role="menu" hidden>
+            <div class="account-menu-head">
+              <strong id="accountMenuName">Account</strong>
+              <span id="accountMenuEmail">you@example.com</span>
+            </div>
+            <div class="quota-block">
+              <div class="quota-block-head">
+                <span class="micro">Today’s allowance</span>
+                <span id="quotaMenuText">— pages left</span>
+              </div>
+              <div class="quota-rail"><span id="quotaMenuBar"></span></div>
+            </div>
+            <button id="openAccountButton" class="account-menu-item" type="button" role="menuitem">
+              Account settings
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+            </button>
+            <button id="openAdminButton" class="account-menu-item" type="button" role="menuitem" hidden>
+              Manage access
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+            </button>
+            <button id="logoutButton" class="account-menu-item account-menu-item--quiet" type="button" role="menuitem">
+              Sign out
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="home-grid">
+      <section class="hero" aria-labelledby="heroTitle">
+        <p class="eyebrow"><span>Your print room</span><span class="eyebrow-rule"></span><span>01</span></p>
+        <h1 id="heroTitle">Straight<br>to <em>paper.</em></h1>
+        <p class="lede">Send a document from wherever you are. It goes straight to the printer by your desk — no laptop trip, no cables, no fuss.</p>
+        <div class="hero-note">
+          <span class="hero-note-index">↳</span>
+          <p>Your file is prepared on the laptop and sent to the printer. It is never kept in someone else’s cloud.</p>
+        </div>
+      </section>
+
+      <section class="intake" aria-label="Upload a document">
+        <div id="dropzone" class="sheet-card">
+          <span class="crop crop--tl" aria-hidden="true"></span>
+          <span class="crop crop--tr" aria-hidden="true"></span>
+          <span class="crop crop--bl" aria-hidden="true"></span>
+          <span class="crop crop--br" aria-hidden="true"></span>
+
+          <div class="sheet-card-top">
+            <span class="micro">Intake / 02</span>
+            <span id="uploadAvailability" class="micro micro--muted">Ready</span>
+          </div>
+
+          <button id="chooseFileButton" class="upload-hit" type="button">
+            <span class="upload-plus" aria-hidden="true">
+              <svg class="plus-icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              <span class="upload-spinner"></span>
+            </span>
+            <span class="upload-copy">
+              <strong id="uploadTitle">Choose a document</strong>
+              <span id="uploadSubtitle">Drop it here, or tap to browse</span>
+            </span>
+            <svg class="upload-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"></path></svg>
+          </button>
+
+          <div class="upload-progress" id="uploadProgress" aria-hidden="true">
+            <span id="uploadProgressBar"></span>
+          </div>
+
+          <div class="sheet-card-foot">
+            <span id="fileHint">PDF · Word · image · text</span>
+            <span id="sizeHint">25 MB max</span>
+          </div>
+          <input id="fileInput" type="file" hidden>
+        </div>
+
+        <button id="printerTicker" class="printer-ticket" type="button">
+          <span class="printer-graphic" aria-hidden="true">
+            <svg viewBox="0 0 28 28"><path d="M8 10V4h12v6M8 19H5.5A1.5 1.5 0 0 1 4 17.5v-6A1.5 1.5 0 0 1 5.5 10h17a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H20"></path><path d="M8 15h12v9H8z"></path><path d="M21 13.5h.01"></path></svg>
+          </span>
+          <span class="printer-ticket-copy">
+            <span class="micro">The printer</span>
+            <strong id="printerName">Looking for it…</strong>
+          </span>
+          <span class="printer-ticket-status">
+            <span id="printerTickerDot" class="status-light status-light--loading" aria-hidden="true"></span>
+            <span id="printerTransport">Checking</span>
+          </span>
+        </button>
+
+        <div class="allowance" aria-label="Today’s page allowance">
+          <div class="allowance-head">
+            <span class="micro">Today’s allowance</span>
+            <span id="allowanceText">— pages left</span>
+          </div>
+          <div class="allowance-rail"><span id="allowanceBar"></span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="recent" aria-labelledby="recentTitle">
+      <div class="section-head">
+        <h2 id="recentTitle">Your recent pages <span id="recentCount" class="recent-count"></span></h2>
+        <button id="refreshHistory" class="text-button" type="button">
+          Refresh
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M6.1 8.2A7 7 0 0 1 19 10M18 15.8A7 7 0 0 1 5 14"></path></svg>
+        </button>
+      </div>
+      <ol id="historyList" class="history-list"></ol>
+      <p id="historyEmpty" class="history-empty">The tray is empty for now. That’s a lovely sound, actually.</p>
+    </section>
+
+    <footer class="site-footer">
+      <div class="footer-rule"></div>
+      <div class="footer-row">
+        <span>Margin print co. <span class="footer-dot">·</span> <span id="connectionLabel">Private</span></span>
+        <div class="footer-actions">
+          <a id="helpLink" href="/help.html" target="_blank" rel="noopener">Printing help</a>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <dialog id="printDialog" class="sheet-dialog" aria-labelledby="sheetHeading">
+    <div id="sheet" class="sheet">
+      <header class="sheet-head">
+        <span class="sheet-grab" aria-hidden="true"></span>
+        <div class="sheet-head-row">
+          <div>
+            <p class="eyebrow"><span>Print setup</span><span class="eyebrow-rule"></span><span id="sheetStep">03</span></p>
+            <h2 id="sheetHeading">Ready when you are.</h2>
+          </div>
+          <button id="closeSheetButton" class="icon-button" type="button" aria-label="Close print setup">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="sheet-body">
+        <div class="file-ticket">
+          <div class="file-preview">
+            <img id="previewImage" alt="" hidden>
+            <div id="previewFallback" class="file-preview-fallback" aria-hidden="true">
+              <svg viewBox="0 0 32 40"><path d="M4 1h16l8 8v30H4z"></path><path d="M20 1v8h8"></path><path d="M10 18h12M10 24h12M10 30h7"></path></svg>
+            </div>
+          </div>
+          <div class="file-ticket-copy">
+            <strong id="previewName">Document.pdf</strong>
+            <span id="previewMeta">PDF · 1 page</span>
+          </div>
+          <div class="file-ticket-actions">
+            <button id="viewPagesButton" class="text-button text-button--small" type="button">View pages</button>
+            <button id="changeFileButton" class="text-button text-button--small" type="button">Change</button>
+          </div>
+        </div>
+
+        <div id="sheetWarnings" class="notice-stack" hidden></div>
+
+        <div class="printer-select-row">
+          <span class="setting-index">00</span>
+          <div class="printer-select-copy">
+            <label for="printerSelect">Printer</label>
+            <span id="printerSelectHint">Connected to the laptop</span>
+          </div>
+          <div class="select-wrap select-wrap--plain">
+            <select id="printerSelect" aria-label="Printer"></select>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+          </div>
+        </div>
+
+        <div class="settings">
+          <div class="setting-row">
+            <span class="setting-index">01</span>
+            <div class="setting-copy">
+              <span class="setting-label">Copies</span>
+              <small>How many times?</small>
+            </div>
+            <div class="stepper">
+              <button id="copiesDown" class="stepper-button" type="button" aria-label="Fewer copies">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+              </button>
+              <input id="copiesInput" class="stepper-input" type="number" min="1" max="999" value="1" inputmode="numeric" aria-label="Number of copies">
+              <button id="copiesUp" class="stepper-button" type="button" aria-label="More copies">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="colorRow" class="setting-field">
+            <div class="setting-field-head">
+              <span class="setting-index">02</span>
+              <span class="setting-label">Color</span>
+              <small id="colorHint">Full color</small>
+            </div>
+            <div id="colorControl" class="segmented" role="group" aria-label="Color mode"></div>
+          </div>
+
+          <div id="qualityRow" class="setting-field">
+            <div class="setting-field-head">
+              <span class="setting-index">03</span>
+              <span class="setting-label">Quality</span>
+              <small>Output definition</small>
+            </div>
+            <div id="qualityControl" class="segmented segmented--quality" role="group" aria-label="Print quality"></div>
+          </div>
+
+          <div class="setting-field">
+            <div class="setting-field-head">
+              <span class="setting-index">04</span>
+              <span class="setting-label">Paper</span>
+              <small id="paperDetail">A4</small>
+            </div>
+            <div class="select-wrap">
+              <select id="paperSelect" aria-label="Paper size"></select>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+            </div>
+          </div>
+
+          <div class="setting-field">
+            <div class="setting-field-head">
+              <span class="setting-index">05</span>
+              <span class="setting-label">Two sides</span>
+              <small id="sidesHint">Choose how it turns</small>
+            </div>
+            <div id="sidesControl" class="segmented segmented--wrap" role="group" aria-label="Two-sided printing"></div>
+          </div>
+
+          <details id="moreSettings" class="more-settings">
+            <summary>
+              <span><span class="setting-index">06</span> More settings</span>
+              <span class="summary-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              </span>
+            </summary>
+            <div class="more-body">
+              <div class="setting-field">
+                <div class="setting-field-head">
+                  <span class="setting-label">Pages</span>
+                  <small>All or a custom range</small>
+                </div>
+                <div id="rangeControl" class="segmented segmented--compact" role="group" aria-label="Pages">
+                  <button type="button" data-range="all" aria-pressed="true">All pages</button>
+                  <button type="button" data-range="custom" aria-pressed="false">Custom</button>
+                </div>
+                <div id="rangeCustomWrap" class="range-custom" hidden>
+                  <label class="sr-only" for="rangeInput">Page range</label>
+                  <input id="rangeInput" class="text-input" type="text" inputmode="numeric" placeholder="e.g. 1–3, 7" autocomplete="off">
+                  <span id="rangeError" class="inline-error" role="alert"></span>
+                </div>
+              </div>
+
+              <div class="setting-field">
+                <div class="setting-field-head">
+                  <span class="setting-label">Orientation</span>
+                  <small>Auto follows the first page</small>
+                </div>
+                <div id="orientationControl" class="segmented" role="group" aria-label="Page orientation"></div>
+              </div>
+
+              <div class="setting-field">
+                <div class="setting-field-head">
+                  <span class="setting-label">Scale</span>
+                  <small>How the page meets the paper</small>
+                </div>
+                <div id="scaleControl" class="segmented" role="group" aria-label="Print scale">
+                  <button type="button" data-value="fit" aria-pressed="true">Fit to paper</button>
+                  <button type="button" data-value="actual" aria-pressed="false">Actual size</button>
+                </div>
+              </div>
+
+              <div id="sourceField" class="setting-field" hidden>
+                <div class="setting-field-head">
+                  <span class="setting-label">Paper source</span>
+                  <small>Which feed to use</small>
+                </div>
+                <div class="select-wrap">
+                  <select id="sourceSelect" aria-label="Paper source"></select>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+                </div>
+              </div>
+
+              <div id="collateField" class="setting-row setting-row--compact">
+                <div class="setting-copy">
+                  <span class="setting-label">Collate pages</span>
+                  <small>Keep each copy in page order</small>
+                </div>
+                <label class="switch">
+                  <input id="collateInput" type="checkbox" checked>
+                  <span class="switch-track" aria-hidden="true"><span></span></span>
+                  <span class="sr-only">Collate pages</span>
+                </label>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <p id="sheetError" class="form-error sheet-error" role="alert"></p>
+      </div>
+
+      <footer class="sheet-foot">
+        <div class="print-summary">
+          <span id="printSummary">A4 · Color · 1 copy</span>
+          <span id="sheetEstimate">1 sheet</span>
+        </div>
+        <p id="sheetQuota" class="sheet-quota">— pages left today</p>
+        <button id="printButton" class="button button--ink button--wide" type="button">
+          <span id="printButtonLabel">Print 1 page</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+        </button>
+        <p class="sheet-fineprint">Your file is cleared from the laptop automatically.</p>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="previewDialog" class="preview-dialog" aria-labelledby="previewDialogHeading">
+    <div class="preview-inner">
+      <header class="mini-dialog-head">
+        <div>
+          <p class="eyebrow"><span>Page preview</span></p>
+          <h2 id="previewDialogHeading">Inside the document.</h2>
+        </div>
+        <button id="closePreviewDialog" class="icon-button" type="button" aria-label="Close page preview">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+
+      <div class="preview-stage">
+        <img id="previewPageImage" alt="Preview of the selected page" hidden>
+        <div id="previewPageFallback" class="preview-fallback">
+          <span class="upload-spinner preview-spinner" aria-hidden="true"></span>
+          <span id="previewPageFallbackText">Loading the page…</span>
+        </div>
+      </div>
+
+      <div class="preview-controls">
+        <button id="previewPrev" class="icon-button" type="button" aria-label="Previous page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        </button>
+        <div class="preview-page-label">
+          <span id="previewPageLabel">Page 1 of 1</span>
+          <span id="previewPageBadge" class="blank-badge" hidden>Looks blank</span>
+        </div>
+        <button id="previewNext" class="icon-button" type="button" aria-label="Next page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </div>
+
+      <p class="mini-dialog-note">This is the page as it will print. Blank pages in the original stay blank.</p>
+    </div>
+  </dialog>
+
+  <dialog id="accountDialog" class="account-dialog" aria-labelledby="accountDialogHeading">
+    <div class="account-dialog-inner">
+      <header class="mini-dialog-head">
+        <div>
+          <p class="eyebrow"><span>Your account</span></p>
+          <h2 id="accountDialogHeading">Good to see you.</h2>
+        </div>
+        <button id="closeAccountDialog" class="icon-button" type="button" aria-label="Close account settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+
+      <div class="account-summary">
+        <span id="accountDialogAvatar" class="account-avatar account-avatar--large" aria-hidden="true">M</span>
+        <div class="account-summary-copy">
+          <strong id="accountDialogName">Your name</strong>
+          <span id="accountDialogEmail">you@example.com</span>
+        </div>
+        <span id="accountDialogRole" class="role-chip">Member</span>
+      </div>
+
+      <div class="account-facts">
+        <div>
+          <span class="micro">Today</span>
+          <strong id="accountQuotaText">— pages left</strong>
+        </div>
+        <div>
+          <span class="micro">Member since</span>
+          <strong id="accountSince">—</strong>
+        </div>
+      </div>
+
+      <form id="passwordForm" class="account-form" novalidate>
+        <h3 class="block-title">Change password</h3>
+        <label class="field-label" for="currentPassword">Current password</label>
+        <input id="currentPassword" class="text-input" type="password" autocomplete="current-password" required>
+
+        <label class="field-label" for="newPassword">New password</label>
+        <input id="newPassword" class="text-input" type="password" autocomplete="new-password" placeholder="At least 10 characters" minlength="10" required>
+
+        <label class="field-label" for="confirmPassword">Repeat new password</label>
+        <input id="confirmPassword" class="text-input" type="password" autocomplete="new-password" required>
+
+        <button id="changePasswordButton" class="button button--outline button--wide" type="submit">
+          <span>Update password</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+        </button>
+        <p id="passwordError" class="form-error" role="alert"></p>
+        <p id="passwordSuccess" class="form-success" role="status"></p>
+      </form>
+
+      <p class="mini-dialog-note">Signing out is in the account menu at the top of the page.</p>
+    </div>
+  </dialog>
+
+  <dialog id="adminDialog" class="admin-dialog" aria-labelledby="adminDialogHeading">
+    <div class="admin-dialog-inner">
+      <header class="mini-dialog-head">
+        <div>
+          <p class="eyebrow"><span>Print room owner</span></p>
+          <h2 id="adminDialogHeading">Manage access.</h2>
+        </div>
+        <button id="closeAdminDialog" class="icon-button" type="button" aria-label="Close access management">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+
+      <p class="admin-lede">Invite people you trust. Everyone keeps their own history, and nobody can open anyone else’s documents.</p>
+
+      <section class="admin-section" aria-labelledby="inviteSectionTitle">
+        <div class="admin-section-head">
+          <h3 id="inviteSectionTitle" class="block-title">Invite someone</h3>
+          <span id="inviteCount" class="micro micro--muted"></span>
+        </div>
+
+        <form id="inviteForm" class="invite-form" novalidate>
+          <label class="sr-only" for="inviteNote">Who is this invitation for?</label>
+          <input id="inviteNote" class="text-input" type="text" maxlength="80" placeholder="Who is this for? (optional)">
+          <div class="select-wrap invite-days-wrap">
+            <select id="inviteDays" aria-label="Invitation lifetime">
+              <option value="7">7 days</option>
+              <option value="14" selected>14 days</option>
+              <option value="30">30 days</option>
+            </select>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"></path></svg>
+          </div>
+          <button id="createInviteButton" class="button button--ink" type="submit">
+            <span>Create invitation</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+          </button>
+        </form>
+        <p id="inviteError" class="form-error" role="alert"></p>
+
+        <div id="adminSecret" class="admin-secret" hidden>
+          <span id="adminSecretLabel" class="micro">New invitation code</span>
+          <div class="secret-row">
+            <code id="adminSecretCode">XXXX-XXXX-XXXX</code>
+            <button id="copyAdminSecret" class="text-button text-button--small" type="button">Copy</button>
+          </div>
+          <p id="adminSecretNote" class="admin-secret-note">Share it privately. It works once.</p>
+        </div>
+
+        <ul id="inviteList" class="admin-list"></ul>
+        <p id="inviteEmpty" class="admin-empty">No open invitations.</p>
+      </section>
+
+      <section class="admin-section" aria-labelledby="peopleSectionTitle">
+        <div class="admin-section-head">
+          <h3 id="peopleSectionTitle" class="block-title">People</h3>
+          <span id="peopleCount" class="micro micro--muted"></span>
+        </div>
+        <ul id="userList" class="admin-list admin-list--people"></ul>
+      </section>
+
+      <section class="admin-section" aria-labelledby="printerSectionTitle">
+        <div class="admin-section-head">
+          <h3 id="printerSectionTitle" class="block-title">Active printer</h3>
+          <span id="adminPrinterStatus" class="micro micro--muted"></span>
+        </div>
+        <p class="admin-printer-lede">Choose which connected printer (USB or Wi-Fi) is available to client-side users. Non-admin users only ever see this printer, with no technical names leaked.</p>
+        <ul id="adminPrinterList" class="admin-list admin-list--printers"></ul>
+        <p id="adminPrinterEmpty" class="admin-empty" hidden>No printers detected. Check that a printer is connected and switched on.</p>
+        <button id="adminRefreshPrinters" class="button button--outline button--wide" type="button">
+          <span>Check printers</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M6.1 8.2A7 7 0 0 1 19 10M18 15.8A7 7 0 0 1 5 14"></path></svg>
+        </button>
+      </section>
+
+      <p class="mini-dialog-note">Managing access never exposes anyone’s documents or print history.</p>
+    </div>
+  </dialog>
+
+  <dialog id="printerDialog" class="printer-dialog" aria-labelledby="printerDialogHeading">
+    <div class="printer-dialog-inner">
+      <header class="mini-dialog-head">
+        <div>
+          <p class="eyebrow"><span>The printer</span></p>
+          <h2 id="printerDialogHeading">By your desk.</h2>
+        </div>
+        <button id="closePrinterDialog" class="icon-button" type="button" aria-label="Close printer details">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+      <div id="printerDetails" class="printer-details"></div>
+      <button id="refreshPrintersButton" class="button button--outline button--wide" type="button">
+        <span>Check again</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M6.1 8.2A7 7 0 0 1 19 10M18 15.8A7 7 0 0 1 5 14"></path></svg>
+      </button>
+      <p class="mini-dialog-note">The printer is connected to the laptop. Only people with an account can send pages to it.</p>
+    </div>
+  </dialog>
+
+  <dialog id="pinDialog" class="pin-dialog" aria-labelledby="pinDialogHeading">
+    <div class="pin-dialog-inner">
+      <header class="mini-dialog-head">
+        <div>
+          <p class="eyebrow"><span>Print room</span></p>
+          <h2 id="pinDialogHeading">Enter the PIN.</h2>
+        </div>
+        <button id="closePinDialog" class="icon-button" type="button" aria-label="Close PIN entry">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+      <p class="pin-lede">The print room owner shared a print PIN with you. Enter it here to authorize printing.</p>
+      <form id="pinForm" class="pin-form" novalidate>
+        <label class="field-label" for="pinInput">Print PIN</label>
+        <input id="pinInput" class="text-input text-input--pin" type="text" inputmode="numeric" maxlength="12" placeholder="e.g. 292929" autocomplete="off" aria-describedby="pinError" required>
+        <button id="pinSubmitButton" class="button button--ink button--wide" type="submit">
+          <span>Authorize printing</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+        </button>
+        <p id="pinError" class="form-error" role="alert"></p>
+      </form>
+      <p class="mini-dialog-note">Authorized for this session. You will not need to re-enter it for every page.</p>
+    </div>
+  </dialog>
+
+  <section id="statusView" class="status-view" hidden aria-live="polite">
+    <div class="status-inner">
+      <header class="status-head">
+        <div class="wordmark wordmark--small">
+          <svg class="wordmark-icon" viewBox="0 0 26 26" aria-hidden="true">
+            <circle cx="13" cy="13" r="8.2"></circle>
+            <path d="M13 0v7M13 19v7M0 13h7M19 13h7"></path>
+          </svg>
+          <span>margin</span>
+        </div>
+        <button id="closeStatusButton" class="icon-button icon-button--quiet" type="button" aria-label="Back to the print room">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+
+      <div class="status-art" id="statusArt" aria-hidden="true">
+        <div class="status-paper status-paper--back"></div>
+        <div class="status-paper status-paper--mid"></div>
+        <div class="status-paper status-paper--front">
+          <span class="paper-line paper-line--long"></span>
+          <span class="paper-line"></span>
+          <span class="paper-line paper-line--short"></span>
+          <span class="paper-line paper-line--heading"></span>
+          <span class="paper-line"></span>
+          <span class="paper-line paper-line--short"></span>
+          <span class="paper-check">
+            <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>
+          </span>
+        </div>
+        <span class="status-reg status-reg--a"></span>
+        <span class="status-reg status-reg--b"></span>
+      </div>
+
+      <div class="status-copy">
+        <p id="statusEyebrow" class="eyebrow"><span>Sending</span><span class="eyebrow-rule"></span><span id="statusJobNumber">Job</span></p>
+        <h2 id="statusTitle">Off to the <em>printer.</em></h2>
+        <p id="statusMessage" class="lede">Turning your file into pages.</p>
+      </div>
+
+      <div id="statusProgressWrap" class="status-progress-wrap">
+        <div class="progress-rail" role="progressbar" aria-label="Print progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressRail">
+          <span id="statusProgressBar"></span>
+        </div>
+        <ol class="job-steps">
+          <li class="job-step is-done" id="stepFile"><span>01</span> File received</li>
+          <li class="job-step is-active" id="stepPages"><span>02</span> Pages prepared</li>
+          <li class="job-step" id="stepPrinter"><span>03</span> Printer took it</li>
+        </ol>
+      </div>
+
+      <div id="statusError" class="status-error" hidden>
+        <p id="statusErrorText"></p>
+      </div>
+
+      <div id="statusReceipt" class="status-receipt" hidden>
+        <div class="receipt-head">
+          <span class="micro">Print receipt</span>
+          <span id="receiptStatus">Sent</span>
+        </div>
+        <div class="receipt-file">
+          <span id="receiptName">Document.pdf</span>
+          <span id="receiptMeta">1 page</span>
+        </div>
+        <div class="receipt-grid">
+          <div><span>Copies</span><strong id="receiptCopies">1</strong></div>
+          <div><span>Color</span><strong id="receiptColor">Color</strong></div>
+          <div><span>Quality</span><strong id="receiptQuality">Standard</strong></div>
+          <div><span>Paper</span><strong id="receiptPaper">A4</strong></div>
+        </div>
+        <div class="receipt-foot">
+          <span id="receiptPrinter">Your printer</span>
+          <span id="receiptTime">Now</span>
+        </div>
+      </div>
+
+      <div id="statusActions" class="status-actions" hidden>
+        <button id="printAnotherButton" class="button button--ink" type="button">
+          <span>Print another</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
+        </button>
+        <button id="backHomeButton" class="button button--outline" type="button">Back to the room</button>
+      </div>
+
+      <p id="statusHint" class="status-hint">Keep this page open while the pages are prepared.</p>
+    </div>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript">Margin needs JavaScript to send pages to the printer.</div>
+  </noscript>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
