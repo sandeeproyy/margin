@@ -115,7 +115,6 @@ export function createPaymentStore({ filePath, maxEntries = 2000 }) {
       currency = 'INR',
       totalPages,
       chargeablePages,
-      freePageApplied,
       receipt = null,
     }) {
       await load();
@@ -137,7 +136,6 @@ export function createPaymentStore({ filePath, maxEntries = 2000 }) {
           0,
           Math.floor(Number(chargeablePages) || 0),
         ),
-        freePageApplied: Boolean(freePageApplied),
         receipt,
         status: 'created',
         createdAt: new Date().toISOString(),

@@ -6,7 +6,6 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   computeQuote,
-  freePageStatus,
   sameQuote,
 } from '../server/paywall.js';
 import { createPaymentStore } from '../server/payments.js';
@@ -28,107 +27,44 @@ function rupees(paise) {
 console.log('[test] Paywall pricing');
 const member = { role: 'member' };
 
-const firstOnePage = computeQuote({ user: member, totalPages: 1 });
-assert.equal(firstOnePage.freePageApplied, true);
-assert.equal(firstOnePage.chargeablePages, 0);
-assert.equal(firstOnePage.amountPaise, 0);
+const onePage = computeQuote({ user: member, totalPages: 1 });
+assert.equal(onePage.chargeablePages, 1);
+assert.equal(onePage.amountPaise, 100);
 
-const firstTwoPages = computeQuote({ user: member, totalPages: 2 });
-assert.equal(firstTwoPages.freePageApplied, true);
-assert.equal(firstTwoPages.chargeablePages, 1);
-assert.equal(firstTwoPages.amountPaise, 100);
+const twoPages = computeQuote({ user: member, totalPages: 2 });
+assert.equal(twoPages.chargeablePages, 2);
+assert.equal(twoPages.amountPaise, 200);
 
-const firstThreePages = computeQuote({ user: member, totalPages: 3 });
-assert.equal(firstThreePages.freePageApplied, true);
-assert.equal(firstThreePages.chargeablePages, 2);
-assert.equal(firstThreePages.amountPaise, 172);
+const threePages = computeQuote({ user: member, totalPages: 3 });
+assert.equal(threePages.chargeablePages, 3);
+assert.equal(threePages.amountPaise, 300);
 
-const firstFourPages = computeQuote({ user: member, totalPages: 4 });
-assert.equal(firstFourPages.chargeablePages, 3);
-assert.equal(firstFourPages.amountPaise, 258);
-
-const usedMember = {
-  role: 'member',
-  freePageUsedAt: new Date().toISOString(),
-};
-const paidOnePage = computeQuote({ user: usedMember, totalPages: 1 });
-assert.equal(paidOnePage.freePageApplied, false);
-assert.equal(paidOnePage.chargeablePages, 1);
-assert.equal(paidOnePage.amountPaise, 100);
-
-const paidTwoPages = computeQuote({ user: usedMember, totalPages: 2 });
-assert.equal(paidTwoPages.amountPaise, 172);
+const fourPages = computeQuote({ user: member, totalPages: 4 });
+assert.equal(fourPages.chargeablePages, 4);
+assert.equal(fourPages.amountPaise, 400);
 
 const owner = computeQuote({
   user: { role: 'admin' },
   totalPages: 9,
 });
-assert.equal(owner.ownerExempt, true);
-assert.equal(owner.chargeablePages, 0);
-assert.equal(owner.amountPaise, 0);
+assert.equal(owner.chargeablePages, 9);
+assert.equal(owner.amountPaise, 900);
+
+const noPages = computeQuote({ user: member, totalPages: 0 });
+assert.equal(noPages.chargeablePages, 0);
+assert.equal(noPages.amountPaise, 0);
 console.log(
-  `  ok (first page free; 2 pages = ${rupees(firstTwoPages.amountPaise)}, 3 pages = ${rupees(firstThreePages.amountPaise)}, single paid page = ${rupees(paidOnePage.amountPaise)})`,
+  `  ok (₹1 per page; 2 pages = ${rupees(twoPages.amountPaise)}, 3 pages = ${rupees(threePages.amountPaise)}, owner = ${rupees(owner.amountPaise)})`,
 );
 
-console.log('[test] Free-page reservation');
-const reservedMember = {
-  role: 'member',
-  freePageReservedAt: new Date().toISOString(),
-  freePageReservedOrderId: 'order_open',
-  freePageReservedJobId: 'job_open',
-};
-const reservedForThisOrder = computeQuote({
-  user: reservedMember,
-  totalPages: 3,
-  forOrderId: 'order_open',
-});
-assert.equal(reservedForThisOrder.freePageApplied, true);
-assert.equal(reservedForThisOrder.amountPaise, 172);
-assert.equal(reservedForThisOrder.freePageReserved, false);
-
-const reservedForAnother = computeQuote({
-  user: reservedMember,
-  totalPages: 3,
-  forOrderId: 'order_other',
-});
-assert.equal(reservedForAnother.freePageApplied, false);
-assert.equal(reservedForAnother.freePageReserved, true);
-assert.equal(reservedForAnother.amountPaise, 258);
-
-const expiredReservation = computeQuote({
-  user: {
-    role: 'member',
-    freePageReservedAt: new Date(Date.now() - 31 * 60 * 1000).toISOString(),
-    freePageReservedOrderId: 'order_old',
-  },
-  totalPages: 1,
-});
-assert.equal(expiredReservation.freePageApplied, true);
-assert.equal(expiredReservation.amountPaise, 0);
-
-const allowPaidFreePage = computeQuote({
-  user: {
-    role: 'member',
-    freePageReservedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    freePageReservedOrderId: 'order_paid',
-  },
-  totalPages: 2,
-  forOrderId: 'order_paid',
-  allowFreePage: true,
-});
-assert.equal(allowPaidFreePage.freePageApplied, true);
-assert.equal(allowPaidFreePage.amountPaise, 100);
-assert.equal(freePageStatus({ role: 'admin' }).ownerExempt, true);
-console.log('  ok (one open order holds the free page; expired holds release it)');
-
 console.log('[test] Quote comparison');
-assert.equal(sameQuote(firstThreePages, { ...firstThreePages }), true);
+assert.equal(sameQuote(threePages, { ...threePages }), true);
 assert.equal(
-  sameQuote(firstThreePages, { ...firstThreePages, amountPaise: 100 }),
+  sameQuote(threePages, { ...threePages, amountPaise: 200 }),
   false,
 );
 assert.equal(
-  sameQuote(firstThreePages, { ...firstThreePages, freePageApplied: false }),
+  sameQuote(threePages, { ...threePages, totalPages: 2, chargeablePages: 2 }),
   false,
 );
 console.log('  ok');
@@ -168,10 +104,9 @@ const created = await paymentStore.create({
   orderId: 'order_store_test',
   userId: 'usr_member',
   jobId: 'job_store_test',
-  amountPaise: 172,
+  amountPaise: 300,
   totalPages: 3,
-  chargeablePages: 2,
-  freePageApplied: true,
+  chargeablePages: 3,
   receipt: 'mgn_store_test',
 });
 assert.equal(created.status, 'created');
@@ -182,9 +117,8 @@ const duplicate = await paymentStore.create({
   amountPaise: 999,
   totalPages: 9,
   chargeablePages: 9,
-  freePageApplied: false,
 });
-assert.equal(duplicate.amountPaise, 172);
+assert.equal(duplicate.amountPaise, 300);
 assert.equal(duplicate.id, created.id);
 
 const active = await paymentStore.findActiveForJob(
@@ -238,7 +172,7 @@ const mockServer = http.createServer((req, res) => {
       send(200, {
         id: 'order_mock_test',
         entity: 'order',
-        amount: 172,
+        amount: 300,
         currency: 'INR',
         receipt: 'mgn_mock',
         status: 'created',
@@ -248,7 +182,7 @@ const mockServer = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/v1/orders/order_mock_test') {
       send(200, {
         id: 'order_mock_test',
-        amount: 172,
+        amount: 300,
         currency: 'INR',
         status: 'paid',
       });
@@ -258,7 +192,7 @@ const mockServer = http.createServer((req, res) => {
       send(200, {
         id: 'pay_mock_test',
         order_id: 'order_mock_test',
-        amount: 172,
+        amount: 300,
         currency: 'INR',
         status: 'authorized',
       });
@@ -271,7 +205,7 @@ const mockServer = http.createServer((req, res) => {
       send(200, {
         id: 'pay_mock_test',
         order_id: 'order_mock_test',
-        amount: 172,
+        amount: 300,
         currency: 'INR',
         status: 'captured',
       });
@@ -291,10 +225,10 @@ try {
     apiBase: `http://127.0.0.1:${mockPort}/v1`,
   });
   const order = await client.createOrder({
-    amountPaise: 172,
+    amountPaise: 300,
     currency: 'INR',
     receipt: 'mgn_mock',
-    notes: { jobId: 'job_mock_test', freePageApplied: '1' },
+    notes: { jobId: 'job_mock_test' },
   });
   assert.equal(order.id, 'order_mock_test');
 
@@ -302,7 +236,7 @@ try {
     (call) => call.method === 'POST' && call.url === '/v1/orders',
   );
   assert(orderCall, 'The client should create an order');
-  assert.equal(orderCall.body.amount, 172);
+  assert.equal(orderCall.body.amount, 300);
   assert.equal(orderCall.body.currency, 'INR');
   assert.equal(orderCall.body.receipt, 'mgn_mock');
   assert.equal(orderCall.body.notes.jobId, 'job_mock_test');
@@ -321,14 +255,14 @@ try {
   const fetchedPayment = await client.getPayment('pay_mock_test');
   assert.equal(fetchedPayment.status, 'authorized');
   const captured = await client.capturePayment('pay_mock_test', {
-    amountPaise: 172,
+    amountPaise: 300,
   });
   assert.equal(captured.status, 'captured');
 
   const captureCall = calls.find(
     (call) => call.url === '/v1/payments/pay_mock_test/capture',
   );
-  assert.equal(captureCall.body.amount, 172);
+  assert.equal(captureCall.body.amount, 300);
   assert.equal(captureCall.body.currency, 'INR');
 
   const badClient = createRazorpayClient({

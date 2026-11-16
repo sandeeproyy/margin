@@ -175,7 +175,7 @@ export async function loadConfig() {
   ).trim();
   const pricePerPagePaise = parsePositiveInt(
     process.env.MARGIN_PRICE_PER_PAGE_PAISE,
-    86,
+    100,
   );
   const minimumChargePaise = Math.max(
     parsePositiveInt(process.env.MARGIN_MINIMUM_CHARGE_PAISE, 100),

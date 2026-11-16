@@ -234,6 +234,7 @@ const state = {
   payment: null,
   openOrder: null,
   checkoutBusy: false,
+  checkoutFailed: false,
   authMode: 'login',
   printers: [],
   defaultPrinterId: null,
@@ -392,42 +393,24 @@ function pricingForPages(totalPages) {
   const paywall = state.paywall;
   if (!paywall) return null;
   const pages = Math.max(0, Math.floor(Number(totalPages) || 0));
-  if (paywall.ownerExempt) {
-    return {
-      ownerExempt: true,
-      freeApplied: false,
-      chargeable: 0,
-      amountPaise: 0,
-      available: false,
-    };
-  }
-  const freeApplied = Boolean(paywall.freePageAvailable) && pages > 0;
-  const chargeable = Math.max(0, pages - (freeApplied ? 1 : 0));
   const amountPaise =
-    chargeable > 0
+    pages > 0
       ? Math.max(
-          chargeable * Number(paywall.pricePerPagePaise || 0),
+          pages * Number(paywall.pricePerPagePaise || 0),
           Number(paywall.minimumChargePaise || 100),
         )
       : 0;
   return {
-    ownerExempt: false,
-    freeApplied,
-    chargeable,
+    chargeable: pages,
     amountPaise,
-    available: true,
+    available: Boolean(paywall.enabled),
   };
 }
 
 function paywallSummaryText() {
   const paywall = state.paywall;
   if (!paywall) return '—';
-  if (paywall.ownerExempt) return 'Owner · prints free';
-  if (paywall.freePageReserved) return 'A payment is open';
   if (!paywall.enabled) return 'Paid printing not set up';
-  if (paywall.freePageAvailable) {
-    return `First page free · then ${formatMoney(paywall.pricePerPagePaise)}/page`;
-  }
   return `${formatMoney(paywall.pricePerPagePaise)} per page`;
 }
 
@@ -2060,7 +2043,6 @@ function updatePrintSummary() {
   const remaining = Math.max(0, Number(state.quota.remainingPages) || 0);
   const overQuota = pagesNeeded > remaining;
   const pricing = pricingForPages(pagesNeeded);
-  const reserved = Boolean(paywall?.freePageReserved) && !paidRetry;
   const paymentsBlocked = Boolean(
     paywall && pricing && pricing.amountPaise > 0 && !paywall.enabled,
   );
@@ -2085,23 +2067,12 @@ function updatePrintSummary() {
   if (paywall) {
     if (paidRetry) {
       refs.sheetPrice.textContent = 'Payment received · finish printing';
-    } else if (pricing.ownerExempt) {
-      refs.sheetPrice.textContent = 'Owner account · no charge';
-    } else if (reserved) {
-      refs.sheetPrice.textContent =
-        'A payment is already open · continue it to print';
-      refs.sheetPrice.classList.add('is-warning');
     } else if (!range.ok || pages < 1) {
       refs.sheetPrice.textContent = '—';
     } else if (paymentsBlocked) {
       refs.sheetPrice.textContent =
         'Paid printing is not set up yet · ask the owner';
       refs.sheetPrice.classList.add('is-warning');
-    } else if (pricing.freeApplied && pricing.amountPaise === 0) {
-      refs.sheetPrice.textContent = 'First page free';
-    } else if (pricing.freeApplied) {
-      refs.sheetPrice.textContent = `First page free · ${formatMoney(pricing.amountPaise)} for ${plural(pricing.chargeable, 'more page')}`;
-      refs.sheetPrice.classList.add('is-paid');
     } else if (pricing.amountPaise > 0) {
       refs.sheetPrice.textContent =
         pricing.chargeable === 1 &&
@@ -2121,7 +2092,6 @@ function updatePrintSummary() {
   else if (!range.ok) label = 'Check the page range';
   else if (overQuota) label = 'Over today’s allowance';
   else if (paymentsBlocked) label = 'Paid printing unavailable';
-  else if (reserved) label = 'Continue payment';
   else if (paidRetry) label = 'Finish paid print';
   else if (pricing && pricing.amountPaise > 0) {
     label = `Pay ${formatMoney(pricing.amountPaise)} & print`;
@@ -2260,6 +2230,7 @@ function openPrintDialog(job) {
   state.rangeMode = 'all';
   state.submittingPrint = false;
   state.checkoutBusy = false;
+  state.checkoutFailed = false;
   if (state.payment && state.payment.jobId !== job.id) state.payment = null;
   if (state.openOrder && state.openOrder.jobId !== job.id) {
     void cancelOpenOrder();
@@ -2350,6 +2321,13 @@ function closePrintDialog(immediate = false) {
   }, 260);
 }
 
+function reopenPrintSheet() {
+  if (!state.job) return;
+  refs.sheet.classList.remove('is-closing');
+  if (!refs.printDialog.open) refs.printDialog.showModal();
+  updateBodyLock();
+}
+
 function stepCopies(direction) {
   if (!state.settings) return;
   const printer = getSelectedPrinter();
@@ -2403,6 +2381,7 @@ async function beginCheckout() {
   if (!body) return;
 
   state.checkoutBusy = true;
+  state.checkoutFailed = false;
   refs.sheetError.textContent = '';
   updatePrintSummary();
 
@@ -2435,6 +2414,7 @@ async function beginCheckout() {
     updatePrintSummary();
   } catch (error) {
     state.checkoutBusy = false;
+    reopenPrintSheet();
     if (isAuthenticatedError(error)) {
       showAuth('Please sign in again before paying.');
       return;
@@ -2474,13 +2454,19 @@ function openRazorpayCheckout(payment) {
           state.payment?.paymentId &&
           state.payment.orderId === payment.orderId
         ) {
+          reopenPrintSheet();
           return;
         }
+        const failed = state.checkoutFailed;
+        state.checkoutFailed = false;
         state.openOrder = null;
         state.payment = null;
         void cancelPaymentOrder(payment.orderId);
-        refs.sheetError.textContent =
-          'Payment cancelled. Nothing was charged.';
+        if (!failed) {
+          refs.sheetError.textContent =
+            'Payment cancelled. Nothing was charged.';
+        }
+        reopenPrintSheet();
         updatePrintSummary();
         void refreshQuota();
       },
@@ -2490,6 +2476,7 @@ function openRazorpayCheckout(payment) {
         !response?.razorpay_payment_id ||
         !response?.razorpay_signature
       ) {
+        state.checkoutFailed = true;
         refs.sheetError.textContent =
           'The payment could not be confirmed. Try again.';
         updatePrintSummary();
@@ -2503,6 +2490,8 @@ function openRazorpayCheckout(payment) {
         signature: response.razorpay_signature,
         amountPaise: payment.amountPaise,
       };
+      state.checkoutFailed = false;
+      reopenPrintSheet();
       updatePrintSummary();
       void submitPrint({
         razorpay_order_id: state.payment.orderId,
@@ -2513,11 +2502,19 @@ function openRazorpayCheckout(payment) {
   });
 
   checkout.on('payment.failed', () => {
+    state.checkoutFailed = true;
     refs.sheetError.textContent =
       'The payment did not go through. You can try again.';
     updatePrintSummary();
   });
 
+  // Razorpay Checkout renders above the page. The print sheet is a native
+  // <dialog> in the browser's top layer, which would cover it, so close the
+  // sheet without cancelling the order. It reopens when Checkout closes.
+  if (refs.printDialog.open) {
+    refs.printDialog.close();
+    updateBodyLock();
+  }
   checkout.open();
 }
 

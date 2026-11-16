@@ -18,7 +18,7 @@ import {
   renderPagePreview,
 } from './documents.js';
 import { createHistoryService } from './history.js';
-import { computeQuote, freePageStatus, sameQuote } from './paywall.js';
+import { computeQuote, sameQuote } from './paywall.js';
 import { createPaymentStore } from './payments.js';
 import {
   createPrinterSelectionStore,
@@ -132,9 +132,9 @@ async function quotaForUser(user) {
 
 const userLocks = new Map();
 
-// Serialise pricing, free-page reservation and print acceptance per account.
-// This is a single-process app, so an in-memory queue is enough to stop two
-// simultaneous requests from claiming the same free page.
+// Serialise pricing and print acceptance per account. This is a single-process
+// app, so an in-memory queue is enough to stop two simultaneous requests from
+// racing each other.
 function withUserLock(userId, task) {
   const prior = userLocks.get(userId) ?? Promise.resolve();
   const run = prior.then(task);
@@ -146,34 +146,20 @@ function withUserLock(userId, task) {
   return run;
 }
 
-function paywallFor(user) {
-  const status = freePageStatus(user, {
-    reservationTtlMs: config.paymentOrderTtlMinutes * 60 * 1000,
-  });
+function paywallFor() {
   return {
     enabled: Boolean(config.paymentsEnabled),
     currency: 'INR',
     pricePerPagePaise: config.pricePerPagePaise,
     minimumChargePaise: config.minimumChargePaise,
-    freePageAvailable: status.available,
-    freePageReserved: Boolean(status.reserved),
-    ownerExempt: status.ownerExempt,
   };
 }
 
-function quoteFor(
-  user,
-  totalPages,
-  { forOrderId = null, allowFreePage = false } = {},
-) {
+function quoteFor(totalPages) {
   return computeQuote({
-    user,
     totalPages,
     pricePerPagePaise: config.pricePerPagePaise,
     minimumChargePaise: config.minimumChargePaise,
-    reservationTtlMs: config.paymentOrderTtlMinutes * 60 * 1000,
-    forOrderId,
-    allowFreePage,
   });
 }
 
@@ -196,11 +182,7 @@ function printEstimate(job, rawRange, copies) {
  * Both the payment-order endpoint and the print endpoint use this so a quote
  * can never be built from different rules.
  */
-async function evaluatePrintRequest(
-  req,
-  job,
-  { forOrderId = null, allowFreePage = false } = {},
-) {
+async function evaluatePrintRequest(req, job) {
   if (!isPinVerified(req.user.id)) {
     return {
       ok: false,
@@ -321,10 +303,7 @@ async function evaluatePrintRequest(
     settings: normalized.settings,
     range: estimate.range,
     totalPages: estimate.totalPages,
-    quote: quoteFor(req.user, estimate.totalPages, {
-      forOrderId,
-      allowFreePage,
-    }),
+    quote: quoteFor(estimate.totalPages),
   };
 }
 
@@ -689,7 +668,7 @@ app.get('/api/bootstrap', async (req, res, next) => {
       history: recent,
       quota,
       pinVerified: isPinVerified(req.user.id),
-      paywall: paywallFor(req.user),
+      paywall: paywallFor(),
     });
   } catch (error) {
     next(error);
@@ -898,7 +877,7 @@ async function resolvePaymentForPrint({
         ok: false,
         code: 'PAYMENT_MISMATCH',
         error:
-          'The print settings or your free page changed after checkout. Start a new payment.',
+          'The print settings changed after checkout. Start a new payment.',
         quote,
       },
     };
@@ -1077,31 +1056,13 @@ app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next
         }
       }
 
-      const evaluation = await evaluatePrintRequest(req, job, {
-        forOrderId: orderId || null,
-        allowFreePage: Boolean(
-          knownPayment &&
-            knownPayment.userId === req.user.id &&
-            knownPayment.jobId === job.id &&
-            knownPayment.freePageApplied,
-        ),
-      });
+      const evaluation = await evaluatePrintRequest(req, job);
       if (!evaluation.ok) {
         sendFailure(res, evaluation);
         return;
       }
 
       const { printer, settings, quote } = evaluation;
-
-      if (quote.freePageReserved) {
-        res.status(409).json({
-          ok: false,
-          code: 'PAYMENT_IN_PROGRESS',
-          error:
-            'A payment is already open for another document. Finish that payment first.',
-        });
-        return;
-      }
 
       let paymentRecord = null;
       if (quote.amountPaise > 0) {
@@ -1111,7 +1072,7 @@ app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next
             code: 'PAYMENT_REQUIRED',
             error: 'This print needs a payment before it can be sent.',
             quote,
-            paywall: paywallFor(req.user),
+            paywall: paywallFor(),
           });
           return;
         }
@@ -1154,20 +1115,6 @@ app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next
           .status(accepted.status || 400)
           .json({ ok: false, error: accepted.error });
         return;
-      }
-
-      if (quote.freePageApplied) {
-        try {
-          await users.markFreePageUsed(req.user.id, {
-            jobId: job.id,
-            orderId: paymentRecord?.orderId ?? null,
-          });
-        } catch (error) {
-          console.error(
-            '[payments] The free page could not be marked as used:',
-            error.message,
-          );
-        }
       }
 
       if (paymentRecord) {
@@ -1256,14 +1203,7 @@ app.post(
             return;
           }
 
-          const referenceQuote = quoteFor(
-            req.user,
-            evaluation.totalPages,
-            {
-              forOrderId: existing.orderId,
-              allowFreePage: existing.freePageApplied,
-            },
-          );
+          const referenceQuote = quoteFor(evaluation.totalPages);
 
           if (!sameQuote(existing, referenceQuote)) {
             if (existing.status === 'paid') {
@@ -1277,9 +1217,6 @@ app.post(
               return;
             }
             await payments.cancel(existing.orderId);
-            await users.clearFreePageReservation(req.user.id, {
-              orderId: existing.orderId,
-            });
           } else if (existing.status === 'paid') {
             res.json({
               ok: true,
@@ -1315,9 +1252,6 @@ app.post(
               return;
             }
             await payments.cancel(existing.orderId);
-            await users.clearFreePageReservation(req.user.id, {
-              orderId: existing.orderId,
-            });
           }
         }
 
@@ -1335,40 +1269,12 @@ app.post(
           return;
         }
 
-        const reservation = freePageStatus(req.user, {
-          reservationTtlMs: ttlMs,
-        });
-        if (reservation.reserved) {
-          const held = await payments.get(reservation.reserved.orderId);
-          const heldAge = held
-            ? Date.now() - new Date(held.createdAt ?? 0).getTime()
-            : Infinity;
-          if (
-            !held ||
-            held.status !== 'created' ||
-            heldAge < 0 ||
-            heldAge > ttlMs
-          ) {
-            await users.clearFreePageReservation(req.user.id, {
-              orderId: reservation.reserved.orderId,
-            });
-          } else if (held.jobId !== job.id) {
-            res.status(409).json({
-              ok: false,
-              code: 'PAYMENT_IN_PROGRESS',
-              error:
-                'A payment is already open for another document. Finish that payment first.',
-            });
-            return;
-          }
-        }
-
-        const freshQuote = quoteFor(req.user, evaluation.totalPages);
+        const freshQuote = quoteFor(evaluation.totalPages);
         if (freshQuote.amountPaise === 0) {
-          res.status(409).json({
+          res.status(400).json({
             ok: false,
             code: 'PAYMENT_NOT_REQUIRED',
-            error: 'This print is free now. Try printing it again.',
+            error: 'This print does not need a payment.',
             quote: freshQuote,
           });
           return;
@@ -1389,7 +1295,6 @@ app.post(
               userId: req.user.id,
               pages: String(freshQuote.totalPages),
               chargeablePages: String(freshQuote.chargeablePages),
-              freePageApplied: freshQuote.freePageApplied ? '1' : '0',
             },
           });
         } catch (error) {
@@ -1434,27 +1339,8 @@ app.post(
           currency: freshQuote.currency,
           totalPages: freshQuote.totalPages,
           chargeablePages: freshQuote.chargeablePages,
-          freePageApplied: freshQuote.freePageApplied,
           receipt,
         });
-
-        if (freshQuote.freePageApplied) {
-          const reserved = await users.reserveFreePage(req.user.id, {
-            orderId: order.id,
-            jobId: job.id,
-            reservationTtlMs: ttlMs,
-          });
-          if (!reserved) {
-            await payments.cancel(order.id);
-            res.status(409).json({
-              ok: false,
-              code: 'PAYMENT_IN_PROGRESS',
-              error:
-                'A payment is already open for another document. Finish that payment first.',
-            });
-            return;
-          }
-        }
 
         res.status(201).json({
           ok: true,
@@ -1491,7 +1377,6 @@ app.post(
       }
       if (record.status === 'created') {
         await payments.cancel(orderId);
-        await users.clearFreePageReservation(req.user.id, { orderId });
       }
       res.setHeader('Cache-Control', 'no-store');
       res.json({ ok: true });
@@ -1518,7 +1403,7 @@ app.get('/api/account', async (req, res, next) => {
       ok: true,
       account: security.publicUser(req.user),
       quota: await quotaForUser(req.user),
-      paywall: paywallFor(req.user),
+      paywall: paywallFor(),
     });
   } catch (error) {
     next(error);

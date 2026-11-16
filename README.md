@@ -112,15 +112,13 @@ let use the printer.
 
 ## Payments
 
-Margin uses Razorpay and charges per print job, after one free page per member.
+Margin uses Razorpay and charges per print job, with every page priced the same.
 
-- **First page ever is free.** A one-page first job costs nothing. A three-page
-  first job uses the free page and charges for two pages.
-- **The owner prints free.** The admin account is exempt.
-- **₹0.86 per page** by default, configured with
-  `MARGIN_PRICE_PER_PAGE_PAISE`. Razorpay's minimum INR charge is ₹1, so a single
-  paid page costs ₹1. Multi-page jobs use the exact per-page total: two pages
-  cost ₹1.72, three pages cost ₹2.58, and so on.
+- **₹1 per page.** The price applies to every account, including the owner.
+  There is no free page and no owner exemption.
+- **Configured with `MARGIN_PRICE_PER_PAGE_PAISE`** (100 paise by default).
+  Razorpay's minimum INR charge is ₹1, so a one-page job costs exactly ₹1. Two
+  pages cost ₹2, three pages cost ₹3, and so on.
 - **Pay per job.** There is no prepaid wallet. Each paid print gets its own
   Razorpay order and Checkout is opened from the print sheet.
 
@@ -143,8 +141,8 @@ To enable payments:
 How verification works:
 
 - The browser receives only the public Key ID, never the Key Secret.
-- The server recomputes the price from the job, page range, copies, free-page
-  state, and owner exemption. A client cannot choose the amount.
+- The server recomputes the price from the job, page range, and copies. A
+  client cannot choose the amount.
 - Before a print is accepted, the server verifies Razorpay's
   `HMAC_SHA256(order_id|payment_id, key_secret)` signature, fetches the order
   and payment from Razorpay, and confirms the amount, currency, and captured
@@ -154,16 +152,16 @@ How verification works:
 - If a print is accepted by Windows but later fails in the spooler, the payment
   is already consumed. Refund it manually from the Razorpay dashboard.
 
-An open unpaid order holds the free page for 30 minutes
-(`MARGIN_PAYMENT_ORDER_TTL_MINUTES`) so two checkouts cannot both claim it.
-Closing Razorpay Checkout cancels that order.
+An open unpaid order blocks another document’s checkout for 30 minutes
+(`MARGIN_PAYMENT_ORDER_TTL_MINUTES`) so a member cannot hold several orders at
+once. Closing Razorpay Checkout cancels that order.
 
 ### Public policy pages
 
 Razorpay's website review needs reachable policy pages without signing in. These
 are plain static files in `public/`:
 
-- `/pricing.html` — free page, per-page price, minimum charge, examples
+- `/pricing.html` — per-page price, minimum charge, examples
 - `/terms.html` — accounts, documents, fair use, printing, payments, liability
 - `/privacy.html` — data collected, document handling, cookies, retention
 - `/refunds.html` — cancellation, refunds, reprints, timing
@@ -369,8 +367,7 @@ Defaults, all configurable in `.env`:
 The test suite uses an isolated temporary data directory and a random local
 port. It exercises health, sign-in, invitations, per-user isolation, PIN gating,
 admin printer selection, client-side name filtering, direct upload, PDF
-preparation, thumbnails, page previews, paywall pricing, free-page reservation,
-payment-record persistence, Razorpay signature verification, and the Razorpay
+preparation, thumbnails, page previews, paywall pricing, payment-record persistence, Razorpay signature verification, and the Razorpay
 client against a local mock. It deliberately stops before any real print, so no
 paper moves.
 

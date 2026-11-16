@@ -180,8 +180,9 @@ async function runTests() {
   });
   assert.equal(adminBootstrap.status, 200);
   assert.equal(adminBootstrap.json.account.role, 'admin');
-  assert.equal(adminBootstrap.json.paywall.ownerExempt, true);
-  assert.equal(adminBootstrap.json.paywall.pricePerPagePaise, 86);
+  assert.equal(adminBootstrap.json.paywall.pricePerPagePaise, 100);
+  assert.equal(adminBootstrap.json.paywall.ownerExempt, undefined);
+  assert.equal(adminBootstrap.json.paywall.freePageAvailable, undefined);
   assert(
     Array.isArray(adminBootstrap.json.printers) &&
       adminBootstrap.json.printers.length <= 1,
@@ -316,9 +317,9 @@ async function runTests() {
   });
   assert.equal(memberBootstrap.status, 200);
   assert.equal(memberBootstrap.json.pinVerified, false);
-  assert.equal(memberBootstrap.json.paywall.ownerExempt, false);
-  assert.equal(memberBootstrap.json.paywall.freePageAvailable, true);
-  assert.equal(memberBootstrap.json.paywall.pricePerPagePaise, 86);
+  assert.equal(memberBootstrap.json.paywall.ownerExempt, undefined);
+  assert.equal(memberBootstrap.json.paywall.freePageAvailable, undefined);
+  assert.equal(memberBootstrap.json.paywall.pricePerPagePaise, 100);
   assert.equal(memberBootstrap.json.paywall.minimumChargePaise, 100);
   assert.equal(memberBootstrap.json.paywall.enabled, false);
   assert.equal(memberBootstrap.json.paywall.keyId, undefined);
