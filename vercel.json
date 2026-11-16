@@ -3,6 +3,17 @@
   "version": 2,
   "routes": [
     {
+      "src": "/(.*)",
+      "headers": {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(self \"https://checkout.razorpay.com\"), usb=()",
+        "Content-Security-Policy": "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.razorpay.com; font-src 'self'; connect-src 'self' https: https://api.razorpay.com https://checkout.razorpay.com https://lumberjack.razorpay.com; frame-src 'self' blob: https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+      },
+      "continue": true
+    },
+    {
       "src": "^/api/(.*)$",
       "dest": "${MARGIN_TUNNEL_URL}/api/$1",
       "env": ["MARGIN_TUNNEL_URL"],
