@@ -1674,6 +1674,14 @@ const server = app.listen(config.port, config.host, () => {
   if (config.publicApiUrl) {
     console.log(`  Tunnel   ${config.publicApiUrl}`);
   }
+  if (config.paymentsEnabled) {
+    const paymentMode = config.razorpayKeyId.startsWith('rzp_live_')
+      ? 'live'
+      : 'test';
+    console.log(`  Payments Razorpay ${paymentMode}`);
+  } else {
+    console.log('  Payments not configured');
+  }
   if (!config.proxySecret) {
     console.log('  Tip      Set MARGIN_PROXY_SECRET before exposing the tunnel.');
   }
