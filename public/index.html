@@ -17,7 +17,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=8">
+  <link rel="stylesheet" href="/styles.css?v=9">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -115,6 +115,7 @@
         <a href="/terms.html">Terms</a>
         <a href="/privacy.html">Privacy</a>
         <a href="/refunds.html">Refunds</a>
+        <a href="/cookies.html">Cookies</a>
         <a href="/contact.html">Contact</a>
       </nav>
     </footer>
@@ -166,7 +167,7 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
             </button>
             <button id="openAdminButton" class="account-menu-item" type="button" role="menuitem" hidden>
-              Manage access
+              Owner dashboard
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
             </button>
             <button id="logoutButton" class="account-menu-item account-menu-item--quiet" type="button" role="menuitem">
@@ -269,6 +270,7 @@
           <a href="/terms.html">Terms</a>
           <a href="/privacy.html">Privacy</a>
           <a href="/refunds.html">Refunds</a>
+          <a href="/cookies.html">Cookies</a>
           <a href="/contact.html">Contact</a>
           <a id="helpLink" href="/help.html" target="_blank" rel="noopener">Printing help</a>
         </div>
@@ -569,14 +571,55 @@
       <header class="mini-dialog-head">
         <div>
           <p class="eyebrow"><span>Print room owner</span></p>
-          <h2 id="adminDialogHeading">Manage access.</h2>
+          <h2 id="adminDialogHeading">The owner’s desk.</h2>
         </div>
-        <button id="closeAdminDialog" class="icon-button" type="button" aria-label="Close access management">
+        <button id="closeAdminDialog" class="icon-button" type="button" aria-label="Close the owner dashboard">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
         </button>
       </header>
 
-      <p class="admin-lede">Invite people you trust. Everyone keeps their own history, and nobody can open anyone else’s documents.</p>
+      <p class="admin-lede">Earnings count completed payments only. Member emails stay on the server, so managing access never exposes an inbox.</p>
+
+      <section class="admin-section admin-earnings" aria-labelledby="earningsSectionTitle">
+        <div class="admin-section-head">
+          <h3 id="earningsSectionTitle" class="block-title">Earnings</h3>
+          <span id="earningsStatus" class="micro micro--muted"></span>
+        </div>
+
+        <div class="earnings-cards">
+          <article class="earnings-card">
+            <span class="micro">All time</span>
+            <strong id="earningsTotal">₹0</strong>
+            <span id="earningsTotalMeta" class="earnings-meta">No paid prints yet</span>
+          </article>
+          <article class="earnings-card">
+            <span class="micro">This month</span>
+            <strong id="earningsMonth">₹0</strong>
+            <span id="earningsMonthMeta" class="earnings-meta">No paid prints yet</span>
+          </article>
+          <article class="earnings-card">
+            <span class="micro">Today</span>
+            <strong id="earningsToday">₹0</strong>
+            <span id="earningsTodayMeta" class="earnings-meta">No paid prints yet</span>
+          </article>
+        </div>
+
+        <div class="earnings-chart-wrap">
+          <div class="earnings-chart-head">
+            <span class="micro">Last 14 days</span>
+            <span id="earningsAverage" class="earnings-meta"></span>
+          </div>
+          <div id="earningsChart" class="earnings-chart" role="img" aria-label="Daily earnings for the last 14 days"></div>
+        </div>
+
+        <div class="earnings-recent-head">
+          <h4 class="block-title">Recent payments</h4>
+          <span class="micro micro--muted">No customer details</span>
+        </div>
+        <ul id="earningsRecent" class="admin-list earnings-recent"></ul>
+        <p id="earningsEmpty" class="admin-empty">Paid prints will appear here.</p>
+        <p id="earningsError" class="form-error" role="alert"></p>
+      </section>
 
       <section class="admin-section" aria-labelledby="inviteSectionTitle">
         <div class="admin-section-head">
@@ -637,7 +680,7 @@
         </button>
       </section>
 
-      <p class="mini-dialog-note">Managing access never exposes anyone’s documents or print history.</p>
+      <p class="mini-dialog-note">The owner dashboard never exposes anyone’s documents or print history. Member emails stay on the server.</p>
     </div>
   </dialog>
 
@@ -754,6 +797,7 @@
     <div class="noscript">Margin needs JavaScript to send pages to the printer.</div>
   </noscript>
 
-  <script src="/app.js?v=8" type="module"></script>
+  <script src="/cookies.js?v=9" defer></script>
+  <script src="/app.js?v=9" type="module"></script>
 </body>
 </html>

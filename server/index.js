@@ -88,6 +88,13 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 app.use(security.securityHeaders);
+app.use('/api', (req, res, next) => {
+  // API responses carry account, job, payment, or admin data. Never let a
+  // browser, proxy, or shared cache keep a copy.
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
 app.use(security.requireProxySecret);
 app.use(security.createOriginGuard());
 app.use(compression());
@@ -1387,6 +1394,25 @@ app.post('/api/account/password', security.requireAppIntent, security.handleChan
 /* Administrator (accounts only, never other people's documents)       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The owner needs to manage people, not read their inboxes. Member emails
+ * never leave the server on an admin response; the signed-in owner sees only
+ * their own address so they can identify the session.
+ */
+function adminSafeUser(user, actorId) {
+  if (!user) return null;
+  const safe = {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt ?? null,
+  };
+  if (user.id === actorId) safe.email = user.email;
+  return safe;
+}
+
 app.get('/api/admin/overview', security.requireAdmin, async (req, res, next) => {
   try {
     const [people, invites] = await Promise.all([
@@ -1396,7 +1422,7 @@ app.get('/api/admin/overview', security.requireAdmin, async (req, res, next) => 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       ok: true,
-      users: people,
+      users: people.map((person) => adminSafeUser(person, req.user.id)),
       invites,
       limits: {
         dailyPages: config.dailyPages,
@@ -1408,53 +1434,81 @@ app.get('/api/admin/overview', security.requireAdmin, async (req, res, next) => 
   }
 });
 
-app.post('/api/admin/invites', security.requireAdmin, async (req, res, next) => {
+app.get('/api/admin/earnings', security.requireAdmin, async (req, res, next) => {
   try {
-    const result = await users.createInvite({
-      createdBy: req.user.id,
-      note: req.body?.note,
-      expiresInDays: req.body?.expiresInDays,
-    });
+    const summary = await payments.summary({ days: 14, recentLimit: 12 });
     res.setHeader('Cache-Control', 'no-store');
-    res.status(201).json({ ok: true, ...result });
+    res.json({ ok: true, earnings: summary });
   } catch (error) {
-    next(error);
-  }
-});
-
-app.delete('/api/admin/invites/:id', security.requireAdmin, async (req, res, next) => {
-  try {
-    await users.revokeInvite(req.params.id);
-    res.json({ ok: true });
-  } catch (error) {
-    if (error.status && error.code) {
-      res.status(error.status).json({ ok: false, error: error.message });
-      return;
-    }
-    next(error);
-  }
-});
-
-app.patch('/api/admin/users/:id', security.requireAdmin, async (req, res, next) => {
-  try {
-    const user = await users.setUserStatus({
-      id: req.params.id,
-      status: req.body?.status,
-      actorId: req.user.id,
-    });
-    res.json({ ok: true, user });
-  } catch (error) {
-    if (error.status && error.code) {
-      res.status(error.status).json({ ok: false, error: error.message });
-      return;
-    }
     next(error);
   }
 });
 
 app.post(
+  '/api/admin/invites',
+  security.requireAdmin,
+  security.requireAppIntent,
+  async (req, res, next) => {
+    try {
+      const result = await users.createInvite({
+        createdBy: req.user.id,
+        note: req.body?.note,
+        expiresInDays: req.body?.expiresInDays,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(201).json({ ok: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+app.delete(
+  '/api/admin/invites/:id',
+  security.requireAdmin,
+  security.requireAppIntent,
+  async (req, res, next) => {
+    try {
+      await users.revokeInvite(req.params.id);
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true });
+    } catch (error) {
+      if (error.status && error.code) {
+        res.status(error.status).json({ ok: false, error: error.message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.patch(
+  '/api/admin/users/:id',
+  security.requireAdmin,
+  security.requireAppIntent,
+  async (req, res, next) => {
+    try {
+      const user = await users.setUserStatus({
+        id: req.params.id,
+        status: req.body?.status,
+        actorId: req.user.id,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ ok: true, user: adminSafeUser(user, req.user.id) });
+    } catch (error) {
+      if (error.status && error.code) {
+        res.status(error.status).json({ ok: false, error: error.message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+app.post(
   '/api/admin/users/:id/reset',
   security.requireAdmin,
+  security.requireAppIntent,
   async (req, res, next) => {
     try {
       const result = await users.resetUserPassword({
@@ -1462,7 +1516,11 @@ app.post(
         actorId: req.user.id,
       });
       res.setHeader('Cache-Control', 'no-store');
-      res.json({ ok: true, ...result });
+      res.json({
+        ok: true,
+        password: result.password,
+        user: adminSafeUser(result.user, req.user.id),
+      });
     } catch (error) {
       if (error.status && error.code) {
         res.status(error.status).json({ ok: false, error: error.message });

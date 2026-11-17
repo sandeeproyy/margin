@@ -144,6 +144,102 @@ assert.equal(reloaded.status, 'consumed');
 assert.equal(reloaded.paymentId, 'pay_store_test');
 console.log('  ok');
 
+console.log('[test] Earnings summary counts only completed payments');
+const earningsPath = path.join(TEST_DIR, 'earnings.json');
+const earningsNow = new Date('2026-11-17T12:00:00+05:30');
+await fsp.writeFile(
+  earningsPath,
+  JSON.stringify([
+    {
+      orderId: 'order_today01',
+      userId: 'usr_a',
+      jobId: 'job_today',
+      amountPaise: 100,
+      chargeablePages: 1,
+      status: 'paid',
+      createdAt: '2026-11-17T06:00:00.000Z',
+      paidAt: '2026-11-17T06:00:00.000Z',
+    },
+    {
+      orderId: 'order_yester1',
+      userId: 'usr_b',
+      jobId: 'job_yesterday',
+      amountPaise: 200,
+      chargeablePages: 2,
+      status: 'consumed',
+      createdAt: '2026-11-16T06:00:00.000Z',
+      paidAt: '2026-11-16T06:00:00.000Z',
+    },
+    {
+      orderId: 'order_recent1',
+      userId: 'usr_c',
+      jobId: 'job_recent',
+      amountPaise: 300,
+      chargeablePages: 3,
+      status: 'paid',
+      createdAt: '2026-11-12T06:00:00.000Z',
+      paidAt: '2026-11-12T06:00:00.000Z',
+    },
+    {
+      orderId: 'order_old0001',
+      userId: 'usr_d',
+      jobId: 'job_old',
+      amountPaise: 400,
+      chargeablePages: 4,
+      status: 'paid',
+      createdAt: '2026-10-20T06:00:00.000Z',
+      paidAt: '2026-10-20T06:00:00.000Z',
+    },
+    {
+      orderId: 'order_open001',
+      userId: 'usr_e',
+      jobId: 'job_open',
+      amountPaise: 900,
+      chargeablePages: 9,
+      status: 'created',
+      createdAt: '2026-11-17T05:00:00.000Z',
+    },
+    {
+      orderId: 'order_cancel1',
+      userId: 'usr_f',
+      jobId: 'job_cancel',
+      amountPaise: 700,
+      chargeablePages: 7,
+      status: 'cancelled',
+      createdAt: '2026-11-17T04:00:00.000Z',
+      cancelledAt: '2026-11-17T04:30:00.000Z',
+    },
+  ]),
+  'utf8',
+);
+const earningsStore = createPaymentStore({ filePath: earningsPath });
+const earnings = await earningsStore.summary({ days: 14, now: earningsNow });
+assert.equal(earnings.currency, 'INR');
+assert.equal(earnings.totals.amountPaise, 1000);
+assert.equal(earnings.totals.pages, 10);
+assert.equal(earnings.totals.payments, 4);
+assert.equal(earnings.totals.averagePaise, 250);
+assert.equal(earnings.today.amountPaise, 100);
+assert.equal(earnings.today.pages, 1);
+assert.equal(earnings.month.amountPaise, 600);
+assert.equal(earnings.month.pages, 6);
+assert.equal(earnings.series.length, 14);
+assert.equal(earnings.series.at(-1).date, '2026-11-17');
+assert.equal(earnings.series.at(-1).amountPaise, 100);
+assert.equal(
+  earnings.series.reduce((sum, point) => sum + point.amountPaise, 0),
+  600,
+);
+assert.equal(earnings.recent.length, 4);
+assert.equal(earnings.recent[0].amountPaise, 100);
+assert.equal(earnings.recent[0].reference, 'order_…oday01');
+for (const payment of earnings.recent) {
+  assert.equal('userId' in payment, false);
+  assert.equal('email' in payment, false);
+  assert.equal('orderId' in payment, false);
+}
+console.log('  ok (paid and consumed count; created and cancelled do not)');
+
 console.log('[test] Razorpay client against a local mock');
 const calls = [];
 const mockServer = http.createServer((req, res) => {

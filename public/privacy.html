@@ -17,7 +17,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=8">
+  <link rel="stylesheet" href="/styles.css?v=9">
 </head>
 <body>
   <a class="skip-link" href="#policy">Skip to the privacy notice</a>
@@ -125,7 +125,7 @@
             <h2>Cookies &amp; browser <em>storage.</em></h2>
           </div>
           <p>Margin sets one essential session cookie so you stay signed in. It is HttpOnly and SameSite=Lax, and it lasts for about 30 days unless you sign out or the account is changed.</p>
-          <p>The browser also uses local storage to remember your printer choice and session storage to remember an active job while the tab is open. These are not advertising trackers.</p>
+          <p>The browser also uses local storage to remember your printer choice and your cookie choice, and session storage to remember an active job while the tab is open. These are not advertising trackers. The <a href="/cookies.html">Cookie policy</a> lists each item and lets you reopen the cookie panel.</p>
           <p>When you open Razorpay Checkout, Razorpay may set its own cookies or similar storage to process the payment and prevent fraud. Those are governed by <a href="https://razorpay.com/privacy/" target="_blank" rel="noopener noreferrer">Razorpay’s privacy policy</a>.</p>
         </section>
 
@@ -162,7 +162,8 @@
             <span class="help-number">08</span>
             <h2>How it is <em>protected.</em></h2>
           </div>
-          <p>Passwords are hashed with scrypt. Sessions use signed, HttpOnly cookies. The printer connection is kept behind a private tunnel, and every job and history entry is scoped to the account that created it. Sign-in, registration, uploads, and prints are rate-limited.</p>
+          <p>Passwords are hashed with scrypt. Sessions use signed, HttpOnly cookies. The printer connection is kept behind a private tunnel, and every job and history entry is scoped to the account that created it. Sign-in, registration, uploads, and prints are rate-limited. API responses are marked no-store, and the site enforces a strict Content Security Policy and origin checks.</p>
+          <p>The owner can manage accounts without seeing member email addresses or opening anyone’s documents. Print history is private to each member, and the owner dashboard shows only aggregate earnings and recent payment amounts.</p>
           <p>No system is perfect. If you believe an account or a document has been exposed, email us immediately so we can investigate and, where needed, end sessions or rotate access.</p>
         </section>
 
@@ -172,7 +173,7 @@
             <h2>Your <em>choices.</em></h2>
           </div>
           <p>You can ask to see, correct, or delete the personal data linked to your account. You can also ask us to stop using it, subject to records we must keep by law. Email <a href="mailto:sandeeproy4984@gmail.com">sandeeproy4984@gmail.com</a> from the address on the account so we can verify the request.</p>
-          <p>You can sign out at any time, clear the browser’s local storage, and ask the owner to close your account. Deleting the app’s browser data does not delete files already prepared on the laptop; those are removed by the normal cleanup.</p>
+          <p>You can sign out at any time, clear the browser’s local storage, and ask the owner to close your account. You can review or reopen the cookie panel from any page footer or the <a href="/cookies.html">Cookie policy</a>. Deleting the app’s browser data does not delete files already prepared on the laptop; those are removed by the normal cleanup.</p>
           <p>Margin is not intended for children. You must be at least 18 to create an account.</p>
         </section>
 
@@ -187,7 +188,7 @@
 
         <footer class="legal-footer">
           <div class="legal-footer-top">
-            <span>Margin print co. <span class="footer-dot">·</span> Last updated 16 November 2026</span>
+            <span>Margin print co. <span class="footer-dot">·</span> Last updated 17 November 2026</span>
             <a class="text-button" href="/">Back to the room</a>
           </div>
           <nav class="legal-nav" aria-label="Policies">
@@ -195,6 +196,7 @@
             <a href="/terms.html">Terms</a>
             <a href="/privacy.html" aria-current="page">Privacy</a>
             <a href="/refunds.html">Refunds</a>
+            <a href="/cookies.html">Cookies</a>
             <a href="/contact.html">Contact</a>
           </nav>
         </footer>
@@ -205,5 +207,6 @@
   <noscript>
     <div class="noscript">Margin needs JavaScript to talk to the printer.</div>
   </noscript>
+  <script src="/cookies.js?v=9" defer></script>
 </body>
 </html>

@@ -519,10 +519,11 @@ export function createSecurity({ config, users }) {
     res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
     res.setHeader(
       'Permissions-Policy',
-      'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+      'camera=(), microphone=(), geolocation=(), payment=(self "https://checkout.razorpay.com"), usb=()',
     );
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
 
-    const connectSources = ["'self'"];
+    const connectSources = ["'self'", 'https://*.trycloudflare.com'];
     if (config.publicApiUrl) {
       try {
         connectSources.push(new URL(config.publicApiUrl).origin);

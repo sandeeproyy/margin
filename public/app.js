@@ -130,6 +130,18 @@ for (const id of [
   'passwordSuccess',
   'adminDialog',
   'closeAdminDialog',
+  'earningsStatus',
+  'earningsTotal',
+  'earningsTotalMeta',
+  'earningsMonth',
+  'earningsMonthMeta',
+  'earningsToday',
+  'earningsTodayMeta',
+  'earningsAverage',
+  'earningsChart',
+  'earningsRecent',
+  'earningsEmpty',
+  'earningsError',
   'inviteCount',
   'inviteForm',
   'inviteNote',
@@ -251,7 +263,7 @@ const state = {
   statusFinished: false,
   closingSheet: null,
   toastTimer: null,
-  admin: { users: [], invites: [], limits: null, printers: [], selectedId: null },
+  admin: { users: [], invites: [], limits: null, printers: [], selectedId: null, earnings: null },
   adminSecret: '',
   passwordBusy: false,
   inviteBusy: false,
@@ -2954,6 +2966,90 @@ function adminChip(text, tone = '') {
   return chip;
 }
 
+function earningsMeta(pages, payments) {
+  if (!payments) return 'No paid prints yet';
+  return `${plural(pages, 'page')} · ${plural(payments, 'payment')}`;
+}
+
+function renderEarnings() {
+  const earnings = state.admin.earnings;
+  refs.earningsError.textContent = '';
+  if (!earnings) {
+    refs.earningsStatus.textContent = '';
+    return;
+  }
+
+  const totals = earnings.totals ?? {};
+  const month = earnings.month ?? {};
+  const today = earnings.today ?? {};
+  refs.earningsTotal.textContent = formatMoney(totals.amountPaise);
+  refs.earningsTotalMeta.textContent = earningsMeta(
+    totals.pages,
+    totals.payments,
+  );
+  refs.earningsMonth.textContent = formatMoney(month.amountPaise);
+  refs.earningsMonthMeta.textContent = earningsMeta(
+    month.pages,
+    month.payments,
+  );
+  refs.earningsToday.textContent = formatMoney(today.amountPaise);
+  refs.earningsTodayMeta.textContent = earningsMeta(today.pages, today.payments);
+  refs.earningsStatus.textContent = totals.payments ? 'Paid prints only' : '';
+  refs.earningsAverage.textContent = totals.payments
+    ? `${formatMoney(totals.averagePaise)} average per payment`
+    : '';
+
+  const series = Array.isArray(earnings.series) ? earnings.series : [];
+  const max = Math.max(...series.map((point) => Number(point.amountPaise) || 0), 0);
+  refs.earningsChart.replaceChildren();
+  for (const point of series) {
+    const amount = Number(point.amountPaise) || 0;
+    const column = document.createElement('div');
+    column.className = 'earnings-bar-col';
+
+    const bar = document.createElement('span');
+    bar.className = 'earnings-bar';
+    if (!amount) bar.classList.add('is-empty');
+    bar.style.height = `${max ? Math.max(5, Math.round((amount / max) * 100)) : 3}%`;
+    bar.title = `${formatShortDate(`${point.date}T12:00:00`)} — ${formatMoney(amount)} · ${plural(Number(point.pages) || 0, 'page')}`;
+    column.append(bar);
+
+    const label = document.createElement('span');
+    label.className = 'earnings-bar-label';
+    label.textContent = String(Number(String(point.date).slice(-2)) || '');
+    column.append(label);
+    refs.earningsChart.append(column);
+  }
+
+  const recent = Array.isArray(earnings.recent) ? earnings.recent : [];
+  refs.earningsRecent.replaceChildren();
+  for (const payment of recent) {
+    const item = document.createElement('li');
+    item.className = 'admin-row earnings-row';
+
+    const copy = document.createElement('div');
+    copy.className = 'admin-row-copy';
+    const title = document.createElement('strong');
+    title.textContent = formatMoney(payment.amountPaise);
+    const meta = document.createElement('span');
+    meta.textContent = `${formatShortDate(payment.paidAt)} · ${plural(Number(payment.pages) || 0, 'page')} · ${payment.reference}`;
+    copy.append(title, meta);
+
+    const side = document.createElement('div');
+    side.className = 'admin-row-side';
+    side.append(
+      adminChip(
+        payment.status === 'consumed' ? 'Printed' : 'Paid',
+        'open',
+      ),
+    );
+
+    item.append(copy, side);
+    refs.earningsRecent.append(item);
+  }
+  refs.earningsEmpty.hidden = recent.length > 0;
+}
+
 function renderAdmin() {
   const { users, invites } = state.admin;
   const openInvites = invites.filter(
@@ -3032,7 +3128,10 @@ function renderAdmin() {
     const last = user.lastLoginAt
       ? `Last in ${formatShortDate(user.lastLoginAt)}`
       : 'Not signed in yet';
-    meta.textContent = `${user.email} · ${role} · ${last}`;
+    const metaParts = [role];
+    if (self && user.email) metaParts.push(user.email);
+    metaParts.push(last);
+    meta.textContent = metaParts.join(' · ');
     copy.append(title, meta);
 
     const side = document.createElement('div');
@@ -3063,6 +3162,26 @@ function renderAdmin() {
   }
 }
 
+async function loadAdminEarnings() {
+  try {
+    const data = await api('/api/admin/earnings');
+    state.admin.earnings = data.earnings ?? null;
+    renderEarnings();
+  } catch (error) {
+    state.admin.earnings = null;
+    renderEarnings();
+    if (isAuthenticatedError(error)) {
+      closeDialogById(refs.adminDialog);
+      showAuth('Please sign in again to see earnings.');
+      return;
+    }
+    refs.earningsError.textContent = describeError(
+      error,
+      'Earnings could not be loaded right now.',
+    );
+  }
+}
+
 async function loadAdmin({ quiet = false } = {}) {
   try {
     const data = await api('/api/admin/overview');
@@ -3074,16 +3193,16 @@ async function loadAdmin({ quiet = false } = {}) {
     };
     renderAdmin();
     if (state.account?.role === 'admin') {
-      await loadAdminPrinters();
+      await Promise.all([loadAdminPrinters(), loadAdminEarnings()]);
     }
   } catch (error) {
     if (isAuthenticatedError(error)) {
       closeDialogById(refs.adminDialog);
-      showAuth('Please sign in again to manage access.');
+      showAuth('Please sign in again to open the owner dashboard.');
       return;
     }
     if (!quiet) {
-      toast(describeError(error, 'Could not load access settings.'), {
+      toast(describeError(error, 'Could not load the owner dashboard.'), {
         error: true,
       });
     }
@@ -3102,6 +3221,12 @@ async function openAdminDialog() {
   refs.userList.replaceChildren();
   refs.inviteCount.textContent = '';
   refs.peopleCount.textContent = '';
+  state.admin.earnings = null;
+  refs.earningsStatus.textContent = 'Loading…';
+  refs.earningsError.textContent = '';
+  refs.earningsChart.replaceChildren();
+  refs.earningsRecent.replaceChildren();
+  refs.earningsEmpty.hidden = true;
   const loading = document.createElement('li');
   loading.className = 'admin-empty';
   loading.textContent = 'Loading…';

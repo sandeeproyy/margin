@@ -38,8 +38,12 @@ are prepared there, and are removed automatically.
 - **Admin printer selection**: all local printers are detected, but the owner
   chooses the one exposed to clients. Clients only ever see a friendly
   "Your printer" label; they never see real names, drivers, ports, or paths.
-- **Shared print PIN**: every print needs the print PIN configured for the room.
-  The unlock lasts 30 minutes per session and is checked on the server.
+- **Paid printing**: every physical page is ₹1, including the owner’s. Razorpay
+  Checkout opens only after the exact amount is shown, and the server verifies
+  the payment before releasing paper.
+- **Owner earnings dashboard**: the owner sees paid totals, today and month
+  totals, a 14-day chart, and recent payment amounts. Member emails and payment
+  identities are not returned to the admin interface.
 - **Hidden tray app**: `scripts/tray.ps1` supervises the Node backend from the
   Windows notification area, with restart supervision and logs. It can start
   automatically at sign-in.
@@ -85,7 +89,7 @@ QR code. Files and history live in `data/`, which is ignored by git.
 ## Accounts and invitations
 
 1. Sign in as the owner.
-2. Open the account menu and choose **Manage access**.
+2. Open the account menu and choose **Owner dashboard**.
 3. Create an invitation and share the code privately. Codes work once and
    expire.
 4. A member creates an account with that code, then signs in normally.
@@ -170,7 +174,7 @@ Margin detects every printer Windows reports, whether it is connected by USB or
 Wi-Fi.
 
 1. Sign in as the owner.
-2. Open **Manage access** and find **Active printer**.
+2. Open **Owner dashboard** and find **Active printer**.
 3. Choose **Use this printer** next to one entry.
 
 The chosen printer is the only printer the print sheet offers, for members and
@@ -307,7 +311,7 @@ API calls or printing to work.
 
 You can also open the laptop's LAN address directly. In that case leave
 `MARGIN_PUBLIC_ORIGIN` and `MARGIN_PUBLIC_API_URL` empty, and use the address
-printed by `npm start`. The PIN and account gates still apply. Vercel is only
+printed by `npm start`. The account and payment gates still apply. Vercel is only
 needed when the person printing is away from the laptop's network.
 
 ## Security model
@@ -330,7 +334,7 @@ needed when the person printing is away from the laptop's network.
   `MARGIN_FILE_TTL_HOURS` (two hours by default). History keeps only the file
   name, settings, and result.
 
-The shared PIN is an authorization gate, not encryption. Use HTTPS (Vercel and
+The payment step is a release gate, not encryption. Use HTTPS (Vercel and
 the tunnel provide it), keep the tunnel secret, and only invite people you
 trust.
 
@@ -353,11 +357,12 @@ Defaults, all configurable in `.env`:
 ## Tests
 
 The test suite uses an isolated temporary data directory and a random local
-port. It exercises health, sign-in, invitations, per-user isolation, PIN gating,
-admin printer selection, client-side name filtering, direct upload, PDF
-preparation, thumbnails, page previews, paywall pricing, payment-record persistence, Razorpay signature verification, and the Razorpay
-client against a local mock. It deliberately stops before any real print, so no
-paper moves.
+port. It exercises health, sign-in, invitations, per-user isolation, admin email
+masking, earnings aggregation, cookie-policy serving, security headers, admin
+printer selection, client-side name filtering, direct upload, PDF preparation,
+thumbnails, page previews, paywall pricing, payment-record persistence, Razorpay
+signature verification, and the Razorpay client against a local mock. It
+deliberately stops before any real print, so no paper moves.
 
 ```powershell
 npm test
@@ -398,7 +403,7 @@ Windows print queue and check for a paused or stuck job, then check paper, ink,
 and the USB cable.
 
 **The printer was replaced or renamed.**
-Open **Manage access → Active printer**, refresh, and choose the new queue. If
+Open **Owner dashboard → Active printer**, refresh, and choose the new queue. If
 the old selection is missing, Margin intentionally refuses to fall back to a
 different printer until the owner clears or replaces the choice.
 
@@ -407,19 +412,20 @@ different printer until the owner clears or replaces the choice.
 | Path | Purpose |
 | --- | --- |
 | `public/` | Static UI, policy pages, help page, fonts, icons |
-| `public/app.js` | Browser application, PIN flow, print sheet, admin panel |
-| `server/index.js` | Express API, auth routes, uploads, PIN gate, admin printer routes |
+| `public/app.js` | Browser application, print sheet, earnings and admin panel |
+| `public/cookies.js` | Cookie notice and preferences panel |
+| `server/index.js` | Express API, auth routes, uploads, payment gate, admin routes |
 | `server/printers.js` | Printer discovery, selection store, client-safe projection |
 | `server/print-service.js` | Print queue, rasterization, GDI print helper, history |
 | `server/paywall.js` | Free-page rules and per-page quote calculation |
-| `server/payments.js` | Payment records, idempotency, open-order tracking |
+| `server/payments.js` | Payment records, idempotency, earnings summaries |
 | `server/razorpay.js` | Razorpay orders, payments, capture, signature checks |
 | `server/security.js` | Sessions, origin/CSRF checks, proxy secret, rate limits |
 | `scripts/print-pages.ps1` | Native Windows GDI printing |
 | `scripts/get-printers.ps1` | Windows printer enumeration |
 | `scripts/tray.ps1` | Hidden tray app and backend supervisor |
 | `scripts/test-paywall.js` | Isolated pricing, payment and Razorpay client tests |
-| `scripts/test-multiuser-pin.js` | Isolated end-to-end test suite |
+| `scripts/test-multiuser.js` | Isolated end-to-end test suite |
 | `vercel.json` | Static hosting plus external API proxy to the tunnel |
 
 ## License

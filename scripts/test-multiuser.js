@@ -404,6 +404,113 @@ async function runTests() {
   assert.equal(printAttempt.json.code, 'PAYMENT_REQUIRED');
   console.log('  ok (nothing was sent to a printer)');
 
+  console.log('[test] 13. Admin responses hide member emails');
+  const overview = await request('/api/admin/overview', {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(overview.status, 200);
+  const aliceRecord = overview.json.users.find(
+    (user) => user.name === 'Alice Member',
+  );
+  const bobRecord = overview.json.users.find(
+    (user) => user.name === 'Bob Member',
+  );
+  const ownerRecord = overview.json.users.find(
+    (user) => user.email === 'admin@margin.test',
+  );
+  assert(aliceRecord, 'Alice should appear in the admin overview');
+  assert(bobRecord, 'Bob should appear in the admin overview');
+  assert(ownerRecord, 'The owner should still see their own email');
+  assert.equal('email' in aliceRecord, false);
+  assert.equal('email' in bobRecord, false);
+  assert.equal(JSON.stringify(overview.json).includes('alice@margin.test'), false);
+  assert.equal(JSON.stringify(overview.json).includes('bob@margin.test'), false);
+  console.log('  ok');
+
+  console.log('[test] 14. Status and reset responses stay email-free');
+  const disableBob = await request(`/api/admin/users/${bobRecord.id}`, {
+    method: 'PATCH',
+    headers: { Cookie: adminCookie },
+    body: { status: 'disabled' },
+  });
+  assert.equal(disableBob.status, 200);
+  assert.equal(disableBob.json.user.status, 'disabled');
+  assert.equal('email' in disableBob.json.user, false);
+
+  const enableBob = await request(`/api/admin/users/${bobRecord.id}`, {
+    method: 'PATCH',
+    headers: { Cookie: adminCookie },
+    body: { status: 'active' },
+  });
+  assert.equal(enableBob.status, 200);
+  assert.equal('email' in enableBob.json.user, false);
+
+  const resetBob = await request(`/api/admin/users/${bobRecord.id}/reset`, {
+    method: 'POST',
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(resetBob.status, 200);
+  assert(resetBob.json.password, 'A temporary password should be returned');
+  assert.equal('email' in resetBob.json.user, false);
+  assert.equal(resetBob.text.includes('bob@margin.test'), false);
+  console.log('  ok');
+
+  console.log('[test] 15. Earnings are owner-only and contain no customer identity');
+  const memberEarnings = await request('/api/admin/earnings', {
+    headers: { Cookie: aliceCookie },
+  });
+  assert.equal(memberEarnings.status, 403);
+
+  const earnings = await request('/api/admin/earnings', {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(earnings.status, 200);
+  assert.equal(earnings.json.earnings.currency, 'INR');
+  assert.equal(earnings.json.earnings.series.length, 14);
+  assert.equal(Array.isArray(earnings.json.earnings.recent), true);
+  assert.equal(typeof earnings.json.earnings.totals.amountPaise, 'number');
+  assert.equal(earnings.text.includes('@margin.test'), false);
+  for (const payment of earnings.json.earnings.recent) {
+    assert.equal('userId' in payment, false);
+    assert.equal('email' in payment, false);
+    assert.equal('orderId' in payment, false);
+  }
+  console.log('  ok');
+
+  console.log('[test] 16. Cookie policy and security headers');
+  const cookiePage = await request('/cookies.html');
+  assert.equal(cookiePage.status, 200);
+  assert.equal(cookiePage.text.includes('Cookie settings'), true);
+  assert.equal(cookiePage.text.includes('/cookies.js?v=9'), true);
+
+  const healthHeaders = await request('/api/health');
+  assert.match(
+    healthHeaders.headers.get('cache-control') || '',
+    /no-store/,
+  );
+  assert.match(
+    healthHeaders.headers.get('permissions-policy') || '',
+    /payment=\(self/,
+  );
+  assert.match(
+    healthHeaders.headers.get('cross-origin-opener-policy') || '',
+    /same-origin-allow-popups/,
+  );
+  const csp = healthHeaders.headers.get('content-security-policy') || '';
+  assert.equal(csp.includes('https://*.trycloudflare.com'), true);
+  assert.equal(/\shttps:\s/.test(csp), false);
+
+  const intentless = await fetch(`${BASE}/api/admin/invites`, {
+    method: 'POST',
+    headers: {
+      Cookie: adminCookie,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ note: 'intent check' }),
+  });
+  assert.equal(intentless.status, 403);
+  console.log('  ok');
+
   console.log('\n==============================================');
   console.log('ALL MULTI-USER, PRIVACY & PAYMENT GATE TESTS PASSED');
   console.log('No physical print job was created.');
