@@ -398,6 +398,16 @@ function pricingForPages(totalPages) {
   const paywall = state.paywall;
   if (!paywall) return null;
   const pages = Math.max(0, Math.floor(Number(totalPages) || 0));
+  // The owner runs the room and never pays for their own prints.
+  if (state.account?.role === 'admin') {
+    return {
+      chargeable: 0,
+      amountPaise: 0,
+      available: true,
+      free: true,
+      pages,
+    };
+  }
   const amountPaise =
     pages > 0
       ? Math.max(
@@ -414,6 +424,7 @@ function pricingForPages(totalPages) {
 
 function paywallSummaryText() {
   const paywall = state.paywall;
+  if (state.account?.role === 'admin') return 'Owner printing is free';
   if (!paywall) return '—';
   if (!paywall.enabled) return 'Paid printing not set up';
   return `${formatMoney(paywall.pricePerPagePaise)} per page`;
@@ -2084,6 +2095,8 @@ function updatePrintSummary() {
       refs.sheetPrice.textContent =
         'Paid printing is not set up yet · ask the owner';
       refs.sheetPrice.classList.add('is-warning');
+    } else if (pricing.free) {
+      refs.sheetPrice.textContent = 'Owner print · no charge';
     } else if (pricing.amountPaise > 0) {
       refs.sheetPrice.textContent =
         pricing.chargeable === 1 &&

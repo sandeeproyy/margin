@@ -38,9 +38,9 @@ are prepared there, and are removed automatically.
 - **Admin printer selection**: all local printers are detected, but the owner
   chooses the one exposed to clients. Clients only ever see a friendly
   "Your printer" label; they never see real names, drivers, ports, or paths.
-- **Paid printing**: every physical page is ₹1, including the owner’s. Razorpay
-  Checkout opens only after the exact amount is shown, and the server verifies
-  the payment before releasing paper.
+- **Paid printing for members**: every physical page is ₹1 for members; the
+  room owner prints free. Razorpay Checkout opens only after the exact amount is
+  shown, and the server verifies the payment before releasing paper.
 - **Owner earnings dashboard**: the owner sees paid totals, today and month
   totals, a 14-day chart, and recent payment amounts. Member emails and payment
   identities are not returned to the admin interface.
@@ -102,11 +102,13 @@ seeing that person's documents.
 
 Margin uses Razorpay and charges per print job, with every page priced the same.
 
-- **₹1 per page.** The price applies to every account, including the owner.
-  There is no free page and no owner exemption.
+- **₹1 per page for members.** The room owner is exempt and prints free.
+  Members have no free page and no allowance to carry over.
 - **Configured with `MARGIN_PRICE_PER_PAGE_PAISE`** (100 paise by default).
   Razorpay's minimum INR charge is ₹1, so a one-page job costs exactly ₹1. Two
   pages cost ₹2, three pages cost ₹3, and so on.
+- **Owner prints skip checkout.** The server prices an owner job at ₹0 and sends
+  it straight to the printer, with no Razorpay order and no payment record.
 - **Pay per job.** There is no prepaid wallet. Each paid print gets its own
   Razorpay order and Checkout is opened from the print sheet.
 

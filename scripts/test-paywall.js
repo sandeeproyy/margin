@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   computeQuote,
+  printsForFree,
+  quoteForUser,
   sameQuote,
 } from '../server/paywall.js';
 import { createPaymentStore } from '../server/payments.js';
@@ -43,18 +45,28 @@ const fourPages = computeQuote({ user: member, totalPages: 4 });
 assert.equal(fourPages.chargeablePages, 4);
 assert.equal(fourPages.amountPaise, 400);
 
-const owner = computeQuote({
+const owner = quoteForUser({
   user: { role: 'admin' },
   totalPages: 9,
 });
-assert.equal(owner.chargeablePages, 9);
-assert.equal(owner.amountPaise, 900);
+assert.equal(owner.chargeablePages, 0);
+assert.equal(owner.amountPaise, 0);
+assert.equal(owner.free, true);
+const memberQuote = quoteForUser({
+  user: { role: 'member' },
+  totalPages: 9,
+});
+assert.equal(memberQuote.chargeablePages, 9);
+assert.equal(memberQuote.amountPaise, 900);
+assert.equal(memberQuote.free, false);
+assert.equal(printsForFree({ role: 'admin' }), true);
+assert.equal(printsForFree({ role: 'member' }), false);
 
 const noPages = computeQuote({ user: member, totalPages: 0 });
 assert.equal(noPages.chargeablePages, 0);
 assert.equal(noPages.amountPaise, 0);
 console.log(
-  `  ok (₹1 per page; 2 pages = ${rupees(twoPages.amountPaise)}, 3 pages = ${rupees(threePages.amountPaise)}, owner = ${rupees(owner.amountPaise)})`,
+  `  ok (₹1 per member page; 2 pages = ${rupees(twoPages.amountPaise)}, 3 pages = ${rupees(threePages.amountPaise)}, owner = free)`,
 );
 
 console.log('[test] Quote comparison');

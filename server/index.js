@@ -18,7 +18,7 @@ import {
   renderPagePreview,
 } from './documents.js';
 import { createHistoryService } from './history.js';
-import { computeQuote, sameQuote } from './paywall.js';
+import { quoteForUser, sameQuote } from './paywall.js';
 import { createPaymentStore } from './payments.js';
 import {
   createPrinterSelectionStore,
@@ -146,8 +146,9 @@ function paywallFor() {
   };
 }
 
-function quoteFor(totalPages) {
-  return computeQuote({
+function quoteFor(user, totalPages) {
+  return quoteForUser({
+    user,
     totalPages,
     pricePerPagePaise: config.pricePerPagePaise,
     minimumChargePaise: config.minimumChargePaise,
@@ -282,7 +283,7 @@ async function evaluatePrintRequest(req, job) {
     settings: normalized.settings,
     range: estimate.range,
     totalPages: estimate.totalPages,
-    quote: quoteFor(estimate.totalPages),
+    quote: quoteFor(req.user, estimate.totalPages),
   };
 }
 
@@ -1181,7 +1182,7 @@ app.post(
             return;
           }
 
-          const referenceQuote = quoteFor(evaluation.totalPages);
+          const referenceQuote = quoteFor(req.user, evaluation.totalPages);
 
           if (!sameQuote(existing, referenceQuote)) {
             if (existing.status === 'paid') {
@@ -1247,7 +1248,7 @@ app.post(
           return;
         }
 
-        const freshQuote = quoteFor(evaluation.totalPages);
+        const freshQuote = quoteFor(req.user, evaluation.totalPages);
         if (freshQuote.amountPaise === 0) {
           res.status(400).json({
             ok: false,

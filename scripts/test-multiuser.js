@@ -511,6 +511,53 @@ async function runTests() {
   assert.equal(intentless.status, 403);
   console.log('  ok');
 
+  console.log('[test] 17. The owner is exempt from payment');
+  const ownerPdf = await createPdf();
+  const ownerPrepare = await request('/api/uploads/prepare', {
+    method: 'POST',
+    headers: { Cookie: adminCookie },
+    body: { name: 'owner-free-check.pdf', size: ownerPdf.length },
+  });
+  assert.equal(ownerPrepare.status, 201);
+
+  const ownerUpload = await fetch(
+    `${BASE}${ownerPrepare.json.upload.url}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/pdf',
+        'X-Upload-Token': ownerPrepare.json.upload.token,
+      },
+      body: ownerPdf,
+    },
+  );
+  assert.equal(ownerUpload.status, 202);
+  const ownerJobId = (await ownerUpload.json()).job.id;
+  const ownerJob = await pollJob(adminCookie, ownerJobId);
+  assert.equal(ownerJob.status, 'ready');
+
+  const ownerOrder = await request(
+    `/api/jobs/${ownerJobId}/payment-order`,
+    {
+      method: 'POST',
+      headers: { Cookie: adminCookie },
+      body: {
+        copies: 1,
+        paperId: '9-827-1169',
+        orientation: 'auto',
+        sides: 'one-sided',
+        scale: 'fit',
+        pageRange: 'all',
+      },
+    },
+  );
+  assert.equal(ownerOrder.status, 400);
+  assert.equal(ownerOrder.json.code, 'PAYMENT_NOT_REQUIRED');
+  assert.equal(ownerOrder.json.quote.amountPaise, 0);
+  assert.equal(ownerOrder.json.quote.chargeablePages, 0);
+  assert.equal(ownerOrder.json.quote.free, true);
+  console.log('  ok (owner quote is ₹0; no Razorpay order and no print)');
+
   console.log('\n==============================================');
   console.log('ALL MULTI-USER, PRIVACY & PAYMENT GATE TESTS PASSED');
   console.log('No physical print job was created.');
