@@ -381,8 +381,23 @@ Run that only when you are ready for paper to move.
 
 **The public site says the printer is unavailable.**
 Check that the laptop is awake and online, Margin is running in the tray, and the
-tunnel is still open. Quick tunnel addresses change; update Vercel and the
-laptop `.env` if it did.
+tunnel is still open. The tray probes the public tunnel once a minute; after three
+failed checks it replaces the tunnel and runs `sync-tunnel.ps1` to update the
+laptop `.env`, the Vercel variable, and production. Recovery takes a few minutes
+and logs to `logs/margin.log` and `logs/sync.log`.
+
+Quick tunnels are ephemeral: Cloudflare can revoke a name while `cloudflared` is
+still running. For a always-on public address, use a named Cloudflare Tunnel
+with your own hostname instead of a quick tunnel.
+
+**Signing in says the print room is offline.**
+That message means the browser reached Vercel but Vercel could not reach the
+tunnel (HTTP 502), not that the password is wrong. Confirm the tunnel address in
+`logs/tunnel.log` resolves, then run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sync-tunnel.ps1
+```
 
 **Vercel API calls return 404.**
 The laptop's `MARGIN_PROXY_SECRET` and the Vercel environment variable must be

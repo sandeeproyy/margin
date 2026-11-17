@@ -20,6 +20,9 @@ if (-not (Test-Path $LogsDir)) {
 
 $script:NodeProcess = $null
 $script:TunnelProcess = $null
+$script:TunnelRecovery = $null
+$script:TunnelFailures = 0
+$script:LastTunnelRecovery = [DateTime]::MinValue
 $script:Stopping = $false
 $script:Mutex = $null
 $CloudflaredPath = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
@@ -161,6 +164,53 @@ function Stop-MarginTunnel {
     }
 }
 
+function Get-PublicApiUrl {
+    try {
+        $envPath = Join-Path $RootDir ".env"
+        if (-not (Test-Path -LiteralPath $envPath)) { return $null }
+        $text = [System.IO.File]::ReadAllText($envPath)
+        $match = [regex]::Match($text, '(?m)^MARGIN_PUBLIC_API_URL=(.+)$')
+        if (-not $match.Success) { return $null }
+        return $match.Groups[1].Value.Trim().TrimEnd('/')
+    } catch {
+        return $null
+    }
+}
+
+# A Cloudflare quick tunnel can be revoked while cloudflared is still running.
+# The process then retries "Tunnel not found" forever, so checking the process
+# alone is not enough. Probe the public address; when it stays dark, replace the
+# tunnel and let sync-tunnel.ps1 repoint Vercel at the new name.
+function Repair-MarginTunnel {
+    if ($script:Stopping) { return }
+    if ($script:TunnelRecovery -and -not $script:TunnelRecovery.HasExited) { return }
+    if ((Get-Date) - $script:LastTunnelRecovery -lt [TimeSpan]::FromMinutes(5)) {
+        return
+    }
+
+    Write-MarginLog "Public tunnel is not answering. Replacing it and re-syncing Vercel."
+    $script:LastTunnelRecovery = Get-Date
+    $script:TunnelFailures = 0
+
+    Stop-MarginTunnel
+
+    # Start the sync first so it sees the URL the fresh tunnel writes.
+    try {
+        $syncScript = Join-Path $ScriptDir "sync-tunnel.ps1"
+        $script:TunnelRecovery = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$syncScript`" -WaitSeconds 150" `
+            -WorkingDirectory $RootDir `
+            -WindowStyle Hidden `
+            -PassThru -ErrorAction Stop
+        Write-MarginLog "Tunnel sync started with PID $($script:TunnelRecovery.Id)."
+    } catch {
+        Write-MarginLog "Tunnel sync could not start: $_"
+        $script:TunnelRecovery = $null
+    }
+
+    Start-MarginTunnel | Out-Null
+}
+
 # Create the tray icon: vermillion disc with a registration cross.
 $iconBitmap = New-Object System.Drawing.Bitmap 32, 32
 $graphics = [System.Drawing.Graphics]::FromImage($iconBitmap)
@@ -250,6 +300,44 @@ $script:Watchdog.add_Tick({
     }
 })
 
+# Separate, slower watchdog for the public path. The backend can be healthy
+# while the tunnel name is dead, which is exactly what members see when a login
+# fails with a gateway error.
+$script:TunnelWatchdog = New-Object System.Windows.Forms.Timer
+$script:TunnelWatchdog.Interval = 60000
+$script:TunnelWatchdog.add_Tick({
+    if ($script:Stopping) { return }
+    if ($script:TunnelRecovery) {
+        if (-not $script:TunnelRecovery.HasExited) { return }
+        try { $script:TunnelRecovery.Dispose() } catch {}
+        $script:TunnelRecovery = $null
+        $script:TunnelFailures = 0
+    }
+    if (-not $script:TunnelProcess -or $script:TunnelProcess.HasExited) { return }
+
+    $url = Get-PublicApiUrl
+    if (-not $url) { return }
+
+    $healthy = $false
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "$url/api/health" -TimeoutSec 5
+        $healthy = $response.StatusCode -eq 200
+    } catch {
+        $healthy = $false
+    }
+
+    if ($healthy) {
+        $script:TunnelFailures = 0
+        return
+    }
+
+    $script:TunnelFailures += 1
+    Write-MarginLog "Public tunnel health check failed ($($script:TunnelFailures)/3)."
+    if ($script:TunnelFailures -ge 3) {
+        Repair-MarginTunnel
+    }
+})
+
 $started = Start-MarginBackend
 Start-MarginTunnel | Out-Null
 if ($started) {
@@ -258,12 +346,14 @@ if ($started) {
     $script:NotifyIcon.ShowBalloonTip(6000, "Margin", "The print room could not start. Right-click the tray icon and choose View Logs.", [System.Windows.Forms.ToolTipIcon]::Error)
 }
 $script:Watchdog.Start()
+$script:TunnelWatchdog.Start()
 
 try {
     [System.Windows.Forms.Application]::Run()
 } finally {
     $script:Stopping = $true
     try { $script:Watchdog.Stop() } catch {}
+    try { $script:TunnelWatchdog.Stop() } catch {}
     Stop-MarginTunnel
     Stop-MarginBackend
     try {

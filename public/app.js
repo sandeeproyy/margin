@@ -538,11 +538,20 @@ async function api(path, options = {}) {
   }
 
   if (!response.ok) {
+    // A proxy error (502/503/504) arrives as an HTML page, not our JSON. That
+    // almost always means the laptop or tunnel is offline, so say that instead
+    // of blaming the request.
+    const proxyOffline =
+      !data && [502, 503, 504].includes(response.status);
     const requestError = new Error(
-      data?.error || 'The print room could not finish that. Try again.',
+      data?.error ||
+        (proxyOffline
+          ? 'The print room is offline right now. The laptop may be asleep or the secure tunnel may have dropped.'
+          : 'The print room could not finish that. Try again.'),
     );
     requestError.status = response.status;
     requestError.data = data;
+    requestError.offline = proxyOffline;
     throw requestError;
   }
 
