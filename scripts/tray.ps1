@@ -19,8 +19,10 @@ if (-not (Test-Path $LogsDir)) {
 }
 
 $script:NodeProcess = $null
+$script:TunnelProcess = $null
 $script:Stopping = $false
 $script:Mutex = $null
+$CloudflaredPath = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
 
 function Write-MarginLog {
     param([string]$Message)
@@ -112,6 +114,53 @@ function Restart-MarginBackend {
     }
 }
 
+function Start-MarginTunnel {
+    if ($script:Stopping) { return $false }
+    if ($script:TunnelProcess -and -not $script:TunnelProcess.HasExited) {
+        return $true
+    }
+
+    if ($script:TunnelProcess) {
+        try { $script:TunnelProcess.Dispose() } catch {}
+        $script:TunnelProcess = $null
+    }
+
+    if (-not (Test-Path $CloudflaredPath)) {
+        Write-MarginLog "cloudflared was not found. The public API will stay offline."
+        return $false
+    }
+
+    try {
+        $process = Start-Process -FilePath $CloudflaredPath `
+            -ArgumentList "tunnel --url http://127.0.0.1:$Port --no-autoupdate --logfile logs\tunnel.log --loglevel info" `
+            -WorkingDirectory $RootDir `
+            -WindowStyle Hidden `
+            -PassThru -ErrorAction Stop
+        $script:TunnelProcess = $process
+        Write-MarginLog "Tunnel started with PID $($process.Id)."
+        return $true
+    } catch {
+        Write-MarginLog "Tunnel could not start: $_"
+        return $false
+    }
+}
+
+function Stop-MarginTunnel {
+    if ($script:TunnelProcess) {
+        try {
+            if (-not $script:TunnelProcess.HasExited) {
+                Write-MarginLog "Stopping tunnel (PID $($script:TunnelProcess.Id))."
+                $script:TunnelProcess.Kill()
+                $script:TunnelProcess.WaitForExit(3000) | Out-Null
+            }
+        } catch {
+            Write-MarginLog "Tunnel did not stop cleanly: $_"
+        }
+        try { $script:TunnelProcess.Dispose() } catch {}
+        $script:TunnelProcess = $null
+    }
+}
+
 # Create the tray icon: vermillion disc with a registration cross.
 $iconBitmap = New-Object System.Drawing.Bitmap 32, 32
 $graphics = [System.Drawing.Graphics]::FromImage($iconBitmap)
@@ -195,9 +244,14 @@ $script:Watchdog.add_Tick({
             $script:NotifyIcon.ShowBalloonTip(2000, "Margin", "The print room is back online.", [System.Windows.Forms.ToolTipIcon]::Info)
         }
     }
+    if (-not $script:TunnelProcess -or $script:TunnelProcess.HasExited) {
+        Write-MarginLog "Tunnel is not running. Restarting it."
+        Start-MarginTunnel | Out-Null
+    }
 })
 
 $started = Start-MarginBackend
+Start-MarginTunnel | Out-Null
 if ($started) {
     $script:NotifyIcon.ShowBalloonTip(3000, "Margin", "Print room is running in the background at http://localhost:$Port", [System.Windows.Forms.ToolTipIcon]::Info)
 } else {
@@ -210,6 +264,7 @@ try {
 } finally {
     $script:Stopping = $true
     try { $script:Watchdog.Stop() } catch {}
+    Stop-MarginTunnel
     Stop-MarginBackend
     try {
         $script:NotifyIcon.Visible = $false

@@ -19,4 +19,13 @@ Get-CimInstance Win32_Process | Where-Object {
     Stop-Process -Id $_.ProcessId -Force
 }
 
+# Stop the Cloudflare tunnel this tray started.
+Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -like '*cloudflared*' -and
+    $_.CommandLine -match '127\.0\.0\.1:3000'
+} | ForEach-Object {
+    Write-Host "Stopping Cloudflare tunnel (PID $($_.ProcessId))..."
+    Stop-Process -Id $_.ProcessId -Force
+}
+
 Write-Host "Margin stopped."
