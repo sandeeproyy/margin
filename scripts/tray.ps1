@@ -177,6 +177,53 @@ function Get-PublicApiUrl {
     }
 }
 
+# The public origin (the Vercel deployment) reads the tunnel from its own
+# environment. Checking both ends tells us which half broke: a dead tunnel vs a
+# deployment still pointing at an old tunnel name.
+function Get-PublicOrigin {
+    try {
+        $envPath = Join-Path $RootDir ".env"
+        if (-not (Test-Path -LiteralPath $envPath)) { return $null }
+        $text = [System.IO.File]::ReadAllText($envPath)
+        $match = [regex]::Match($text, '(?m)^MARGIN_PUBLIC_ORIGIN=(.+)$')
+        if (-not $match.Success) { return $null }
+        return $match.Groups[1].Value.Trim().TrimEnd('/')
+    } catch {
+        return $null
+    }
+}
+
+function Test-MarginHealth {
+    param([string]$Url, [int]$TimeoutSec = 8)
+    if (-not $Url) { return $false }
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "$Url/api/health" -TimeoutSec $TimeoutSec
+        return $response.StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
+function Start-TunnelSync {
+    param([switch]$Force)
+    if ($script:TunnelRecovery -and -not $script:TunnelRecovery.HasExited) { return }
+
+    $syncScript = Join-Path $ScriptDir "sync-tunnel.ps1"
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$syncScript`" -WaitSeconds 150"
+    if ($Force) { $arguments += " -Force" }
+    try {
+        $script:TunnelRecovery = Start-Process -FilePath "powershell.exe" `
+            -ArgumentList $arguments `
+            -WorkingDirectory $RootDir `
+            -WindowStyle Hidden `
+            -PassThru -ErrorAction Stop
+        Write-MarginLog "Tunnel sync started with PID $($script:TunnelRecovery.Id) (force=$([bool]$Force))."
+    } catch {
+        Write-MarginLog "Tunnel sync could not start: $_"
+        $script:TunnelRecovery = $null
+    }
+}
+
 # A Cloudflare quick tunnel can be revoked while cloudflared is still running.
 # The process then retries "Tunnel not found" forever, so checking the process
 # alone is not enough. Probe the public address; when it stays dark, replace the
@@ -184,7 +231,7 @@ function Get-PublicApiUrl {
 function Repair-MarginTunnel {
     if ($script:Stopping) { return }
     if ($script:TunnelRecovery -and -not $script:TunnelRecovery.HasExited) { return }
-    if ((Get-Date) - $script:LastTunnelRecovery -lt [TimeSpan]::FromMinutes(5)) {
+    if ((Get-Date) - $script:LastTunnelRecovery -lt [TimeSpan]::FromMinutes(2)) {
         return
     }
 
@@ -195,19 +242,7 @@ function Repair-MarginTunnel {
     Stop-MarginTunnel
 
     # Start the sync first so it sees the URL the fresh tunnel writes.
-    try {
-        $syncScript = Join-Path $ScriptDir "sync-tunnel.ps1"
-        $script:TunnelRecovery = Start-Process -FilePath "powershell.exe" `
-            -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$syncScript`" -WaitSeconds 150" `
-            -WorkingDirectory $RootDir `
-            -WindowStyle Hidden `
-            -PassThru -ErrorAction Stop
-        Write-MarginLog "Tunnel sync started with PID $($script:TunnelRecovery.Id)."
-    } catch {
-        Write-MarginLog "Tunnel sync could not start: $_"
-        $script:TunnelRecovery = $null
-    }
-
+    Start-TunnelSync
     Start-MarginTunnel | Out-Null
 }
 
@@ -304,7 +339,7 @@ $script:Watchdog.add_Tick({
 # while the tunnel name is dead, which is exactly what members see when a login
 # fails with a gateway error.
 $script:TunnelWatchdog = New-Object System.Windows.Forms.Timer
-$script:TunnelWatchdog.Interval = 60000
+$script:TunnelWatchdog.Interval = 30000
 $script:TunnelWatchdog.add_Tick({
     if ($script:Stopping) { return }
     if ($script:TunnelRecovery) {
@@ -315,25 +350,38 @@ $script:TunnelWatchdog.add_Tick({
     }
     if (-not $script:TunnelProcess -or $script:TunnelProcess.HasExited) { return }
 
-    $url = Get-PublicApiUrl
-    if (-not $url) { return }
+    $tunnelUrl = Get-PublicApiUrl
+    $originUrl = Get-PublicOrigin
+    if (-not $tunnelUrl -and -not $originUrl) { return }
 
-    $healthy = $false
-    try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "$url/api/health" -TimeoutSec 5
-        $healthy = $response.StatusCode -eq 200
-    } catch {
-        $healthy = $false
-    }
+    $tunnelUp = Test-MarginHealth $tunnelUrl 6
+    $originUp = Test-MarginHealth $originUrl 8
 
-    if ($healthy) {
+    if ($originUp) {
         $script:TunnelFailures = 0
         return
     }
 
+    if ($tunnelUp) {
+        # The tunnel answers but the public deployment does not. That is a
+        # stale Vercel environment, not a dead tunnel: redeploy against the
+        # current address instead of replacing a working tunnel.
+        $script:TunnelFailures += 1
+        Write-MarginLog "Public origin health check failed while the tunnel is up ($($script:TunnelFailures)/2)."
+        if ($script:TunnelFailures -ge 2) {
+            if ((Get-Date) - $script:LastTunnelRecovery -ge [TimeSpan]::FromMinutes(2)) {
+                $script:LastTunnelRecovery = Get-Date
+                $script:TunnelFailures = 0
+                Write-MarginLog "Re-syncing Vercel with the current healthy tunnel."
+                Start-TunnelSync -Force
+            }
+        }
+        return
+    }
+
     $script:TunnelFailures += 1
-    Write-MarginLog "Public tunnel health check failed ($($script:TunnelFailures)/3)."
-    if ($script:TunnelFailures -ge 3) {
+    Write-MarginLog "Public tunnel health check failed ($($script:TunnelFailures)/2)."
+    if ($script:TunnelFailures -ge 2) {
         Repair-MarginTunnel
     }
 })

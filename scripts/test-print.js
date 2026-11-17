@@ -25,11 +25,15 @@ const requestedPrinter =
 const copiesFlag = args.indexOf('--copies');
 const requestedCopies =
   copiesFlag >= 0 ? Number.parseInt(args[copiesFlag + 1] ?? '', 10) : 1;
+const qualityFlag = args.indexOf('--quality');
+const requestedQuality =
+  qualityFlag >= 0 ? String(args[qualityFlag + 1] ?? '').trim() : '';
+const requestedMono = args.includes('--mono') || args.includes('--bw');
 
 const QUALITY_DPI = {
-  High: 288,
-  Medium: 200,
-  Low: 150,
+  High: 360,
+  Medium: 240,
+  Low: 180,
   Draft: 120,
   PrinterDefault: 200,
 };
@@ -352,10 +356,20 @@ async function run() {
     const printer = choosePrinter(data);
     const paper = choosePaper(printer);
     const source = chooseSource(printer);
-    const quality =
-      printer.qualities?.some((item) => item.id === printer.defaultQuality)
-        ? printer.defaultQuality
-        : printer.qualities?.[0]?.id || 'Medium';
+    const printerQualities = (printer.qualities ?? []).map((item) => item.id);
+    let quality = printerQualities.includes(printer.defaultQuality)
+      ? printer.defaultQuality
+      : printerQualities[0] || 'Medium';
+    if (requestedQuality) {
+      if (!printerQualities.includes(requestedQuality)) {
+        fail(
+          `This printer does not offer "${requestedQuality}" quality. Available: ${printerQualities.join(', ') || 'none reported'}.`,
+        );
+        return;
+      }
+      quality = requestedQuality;
+    }
+    const color = requestedMono ? false : Boolean(printer.supportsColor);
     const renderDpi = QUALITY_DPI[quality] ?? 200;
     const maxCopies = Math.max(1, Number(printer.maxCopies) || 1);
     const copies = Math.max(
@@ -372,6 +386,7 @@ async function run() {
     line(`  Printer   ${printer.name}`);
     line(`  Paper     ${paper.name}${paper.detail ? ` - ${paper.detail}` : ''}`);
     line(`  Quality   ${quality} (${renderDpi} dpi raster)`);
+    line(`  Color     ${color ? 'Color' : 'B&W'}`);
     line(`  Feed      ${source?.name || 'Driver default'}`);
     line(`  Copies    ${copies}`);
     line('');
@@ -413,7 +428,7 @@ async function run() {
       pagePaths: [imagePath],
       copies,
       collate: true,
-      color: Boolean(printer.supportsColor),
+      color,
       quality,
       landscape: false,
       duplex: 'simplex',
@@ -478,6 +493,19 @@ async function run() {
 
     line('');
     line(`  Sent. Windows spool job ${result.jobId}.`);
+    if (result.mode) {
+      line(
+        `  Path      ${result.mode === 'xps' ? 'XPS + validated PrintTicket' : 'GDI fallback'}`,
+      );
+    }
+    if (result.ticket) {
+      line(
+        `  Ticket    ${result.ticket.color || '—'} / ${result.ticket.quality || '—'} / ${result.ticket.resolution || '—'} / ${result.ticket.paper || '—'}`,
+      );
+    }
+    if (result.xpsError) {
+      line(`  Note      ${result.xpsError}`);
+    }
     line('  Pick up the page. If it looks right, the USB path is working.');
     line('');
   } catch (error) {

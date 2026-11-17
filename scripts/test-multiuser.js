@@ -556,6 +556,18 @@ async function runTests() {
   assert.equal(ownerOrder.json.quote.amountPaise, 0);
   assert.equal(ownerOrder.json.quote.chargeablePages, 0);
   assert.equal(ownerOrder.json.quote.free, true);
+
+  const ownerBootstrap = await request('/api/bootstrap', {
+    headers: { Cookie: adminCookie },
+  });
+  assert.equal(ownerBootstrap.status, 200);
+  assert.equal(ownerBootstrap.json.paywall.freeForYou, true);
+
+  const aliceBootstrap = await request('/api/bootstrap', {
+    headers: { Cookie: aliceCookie },
+  });
+  assert.equal(aliceBootstrap.status, 200);
+  assert.equal(aliceBootstrap.json.paywall.freeForYou, false);
   console.log('  ok (owner quote is ₹0; no Razorpay order and no print)');
 
   console.log('\n==============================================');

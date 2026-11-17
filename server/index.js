@@ -18,7 +18,7 @@ import {
   renderPagePreview,
 } from './documents.js';
 import { createHistoryService } from './history.js';
-import { quoteForUser, sameQuote } from './paywall.js';
+import { printsForFree, quoteForUser, sameQuote } from './paywall.js';
 import { createPaymentStore } from './payments.js';
 import {
   createPrinterSelectionStore,
@@ -37,6 +37,12 @@ import {
 import { createUserStore } from './users.js';
 
 const config = await loadConfig();
+
+// Bumped whenever the browser bundle changes in a way clients must pick up.
+// Bootstrap reports it so a phone with a cached shell reloads itself once.
+const APP_VERSION = '2.0.1';
+const SHELL_VERSION = 13;
+
 const users = createUserStore({
   filePath: config.usersPath,
   secret: config.sessionSecret,
@@ -137,12 +143,15 @@ function withUserLock(userId, task) {
   return run;
 }
 
-function paywallFor() {
+function paywallFor(user) {
   return {
     enabled: Boolean(config.paymentsEnabled),
     currency: 'INR',
     pricePerPagePaise: config.pricePerPagePaise,
     minimumChargePaise: config.minimumChargePaise,
+    // Server-authoritative owner exemption. The client uses this flag so a
+    // stale bundle or a half-loaded session can never invent a charge.
+    freeForYou: printsForFree(user),
   };
 }
 
@@ -470,6 +479,8 @@ app.get('/api/auth', (req, res) => {
     user: security.publicUser(req.user),
     app: {
       name: 'Margin',
+      version: APP_VERSION,
+      shellVersion: SHELL_VERSION,
       maxUploadMb: config.maxUploadMb,
       openSignup: config.openSignup,
     },
@@ -637,7 +648,8 @@ app.get('/api/bootstrap', async (req, res, next) => {
       account: security.publicUser(req.user),
       app: {
         name: 'Margin',
-        version: '2.0.0',
+        version: APP_VERSION,
+        shellVersion: SHELL_VERSION,
         maxUploadMb: config.maxUploadMb,
         acceptedExtensions: [...config.allowedExtensions],
         openSignup: config.openSignup,
@@ -647,7 +659,7 @@ app.get('/api/bootstrap', async (req, res, next) => {
       printerAvailable: printers.some((printer) => printer.online),
       history: recent,
       quota,
-      paywall: paywallFor(),
+      paywall: paywallFor(req.user),
     });
   } catch (error) {
     next(error);
@@ -1051,7 +1063,7 @@ app.post('/api/jobs/:id/print', security.requireAppIntent, async (req, res, next
             code: 'PAYMENT_REQUIRED',
             error: 'This print needs a payment before it can be sent.',
             quote,
-            paywall: paywallFor(),
+            paywall: paywallFor(req.user),
           });
           return;
         }
@@ -1382,7 +1394,7 @@ app.get('/api/account', async (req, res, next) => {
       ok: true,
       account: security.publicUser(req.user),
       quota: await quotaForUser(req.user),
-      paywall: paywallFor(),
+      paywall: paywallFor(req.user),
     });
   } catch (error) {
     next(error);
@@ -1624,6 +1636,11 @@ app.use(
       }
       if (filePath.endsWith('index.html')) {
         res.setHeader('Cache-Control', 'no-store');
+      }
+      // The app shell is tiny. Never let a phone keep an old bundle that
+      // disagrees with the server about pricing or printer state.
+      if (/\.(js|css|webmanifest)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
       }
     },
   }),

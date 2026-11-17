@@ -11,12 +11,22 @@ import { parsePageRange } from './documents.js';
 const execFileAsync = promisify(execFile);
 
 const QUALITY_DPI = {
-  High: 288,
-  Medium: 200,
-  Low: 150,
+  High: 360,
+  Medium: 240,
+  Low: 180,
   Draft: 120,
   PrinterDefault: 200,
 };
+
+// The XPS path keeps every rendered page in memory until the job is spooled.
+// Cap the raster on long jobs so a 100-page document cannot exhaust the laptop.
+function rasterDpiFor(quality, pageCount) {
+  const base = QUALITY_DPI[quality] ?? 200;
+  const pages = Math.max(1, Number(pageCount) || 1);
+  if (pages > 25) return Math.min(base, 200);
+  if (pages > 10) return Math.min(base, 240);
+  return base;
+}
 
 const QUALITY_LABEL = {
   High: 'Fine',
@@ -224,7 +234,7 @@ export function createPrintService({ config, history }) {
         landscape = job.info.pageLandscape?.[firstIndex] ?? job.info.firstPageLandscape;
       }
 
-      const qualityDpi = QUALITY_DPI[settings.quality] ?? 200;
+      const qualityDpi = rasterDpiFor(settings.quality, range.indices.length);
       const document = await rasterPdf(job.pdfPath, { scale: qualityDpi / 72 });
       const pagePaths = [];
       const blankPages = [];
@@ -358,6 +368,12 @@ export function createPrintService({ config, history }) {
         throw new Error(
           'The printer did not respond. Check the printer, then try again.',
         );
+      }
+      if (result.mode === 'gdi' && result.xpsError) {
+        // The job still printed, but through the older GDI path. Keep the
+        // driver's reason here so a silent color/quality fallback is visible
+        // in the laptop log.
+        console.error('[print] XPS path fell back to GDI:', result.xpsError);
       }
 
       updateJob(job, {

@@ -1,5 +1,6 @@
 param(
-    [int]$WaitSeconds = 180
+    [int]$WaitSeconds = 180,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +66,18 @@ for ($i = 0; $i -lt $WaitSeconds; $i++) {
     Start-Sleep -Seconds 1
 }
 
+if (-not $url -and $Force) {
+    # A forced re-sync can run while the current tunnel is still healthy, so no
+    # newer log line will appear. Reuse the latest address the tunnel reported.
+    if (Test-Path $TunnelLogFile) {
+        $lines = Get-Content -LiteralPath $TunnelLogFile -Tail 500 -ErrorAction SilentlyContinue
+        foreach ($line in $lines) {
+            $match = [regex]::Match($line, 'https://[a-z0-9-]+\.trycloudflare\.com')
+            if ($match.Success) { $url = $match.Value }
+        }
+    }
+}
+
 if (-not $url) {
     Write-SyncLog "No new quick-tunnel URL appeared within $WaitSeconds seconds."
     exit 1
@@ -105,9 +118,13 @@ if (Test-Path $MarkerFile) {
     $synced = ([System.IO.File]::ReadAllText($MarkerFile)).Trim()
 }
 
-if (-not $envChanged -and $synced -eq $url) {
+if (-not $Force -and -not $envChanged -and $synced -eq $url) {
     Write-SyncLog "Vercel already points at this tunnel."
     exit 0
+}
+
+if ($Force) {
+    Write-SyncLog "Force requested: redeploying Vercel against the current tunnel."
 }
 
 Push-Location $RootDir

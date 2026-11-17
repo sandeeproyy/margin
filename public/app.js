@@ -228,12 +228,24 @@ const STORAGE_KEYS = {
   pendingJob: 'margin.pendingJob',
 };
 
+// Must match SHELL_VERSION in server/index.js. When the server reports a newer
+// shell, an open client reloads once with a cache-busting query.
+const APP_BUILD = 13;
+const BOOT_RETRY_MS = 4000;
+const BOOT_RETRY_LIMIT = 15;
+
 const state = {
   app: {
+    version: '2.0.1',
+    shellVersion: APP_BUILD,
     maxUploadMb: 25,
     acceptedExtensions: FALLBACK_EXTENSIONS,
     openSignup: false,
   },
+  started: false,
+  starting: false,
+  startAttempts: 0,
+  hiddenAt: 0,
   account: null,
   quota: { dailyPages: 120, usedPages: 0, remainingPages: 120 },
   paywall: null,
@@ -398,8 +410,13 @@ function pricingForPages(totalPages) {
   const paywall = state.paywall;
   if (!paywall) return null;
   const pages = Math.max(0, Math.floor(Number(totalPages) || 0));
-  // The owner runs the room and never pays for their own prints.
-  if (state.account?.role === 'admin') {
+  // The owner runs the room and never pays for their own prints. Trust the
+  // server flag first; the role check only covers a bundle talking to an
+  // older server.
+  const freeForYou = Boolean(
+    paywall.freeForYou || state.account?.role === 'admin',
+  );
+  if (freeForYou) {
     return {
       chargeable: 0,
       amountPaise: 0,
@@ -424,7 +441,9 @@ function pricingForPages(totalPages) {
 
 function paywallSummaryText() {
   const paywall = state.paywall;
-  if (state.account?.role === 'admin') return 'Owner printing is free';
+  if (paywall?.freeForYou || state.account?.role === 'admin') {
+    return 'Owner printing is free';
+  }
   if (!paywall) return '—';
   if (!paywall.enabled) return 'Paid printing not set up';
   return `${formatMoney(paywall.pricePerPagePaise)} per page`;
@@ -516,29 +535,54 @@ function setBusyButton(button, busy, busyLabel, idleLabel) {
 /* Networking                                                          */
 /* ------------------------------------------------------------------ */
 
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const GET_RETRY_DELAYS = [0, 500, 1400];
+
 async function api(path, options = {}) {
-  const { method = 'GET', body, signal } = options;
+  const { method = 'GET', body, signal, retries } = options;
+  const attempts = Number.isFinite(retries)
+    ? Math.max(1, Math.round(retries) + 1)
+    : method === 'GET'
+      ? GET_RETRY_DELAYS.length
+      : 1;
   const headers = {};
   if (method !== 'GET') headers['X-Margin-Intent'] = 'app';
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   let response;
-  try {
-    response = await fetch(path, {
-      method,
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    });
-  } catch (error) {
-    if (error?.name === 'AbortError') throw error;
-    const networkError = new Error(
-      'Could not reach the print room. Check your connection and try again.',
-    );
-    networkError.network = true;
-    throw networkError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(GET_RETRY_DELAYS[attempt] ?? 1400);
+    }
+    try {
+      response = await fetch(path, {
+        method,
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      if (attempt + 1 < attempts) continue;
+      const networkError = new Error(
+        'Could not reach the print room. Check your connection and try again.',
+      );
+      networkError.network = true;
+      throw networkError;
+    }
+
+    // A sleeping laptop or a just-recovered tunnel answers through the proxy
+    // with 502/503/504. Those are safe to retry for reads.
+    if (
+      RETRYABLE_STATUS.has(response.status) &&
+      attempt + 1 < attempts
+    ) {
+      response.body?.cancel().catch?.(() => {});
+      continue;
+    }
+    break;
   }
 
   let data = null;
@@ -553,7 +597,7 @@ async function api(path, options = {}) {
     // almost always means the laptop or tunnel is offline, so say that instead
     // of blaming the request.
     const proxyOffline =
-      !data && [502, 503, 504].includes(response.status);
+      !data && RETRYABLE_STATUS.has(response.status);
     const requestError = new Error(
       data?.error ||
         (proxyOffline
@@ -672,7 +716,25 @@ function updateBodyLock() {
 }
 
 function hideBoot() {
+  setBootNote('');
   refs.boot.classList.add('is-done');
+}
+
+let bootNote = null;
+
+function setBootNote(message) {
+  if (!message) {
+    bootNote?.remove();
+    bootNote = null;
+    return;
+  }
+  if (!bootNote) {
+    bootNote = document.createElement('p');
+    bootNote.className = 'boot-note';
+    bootNote.setAttribute('role', 'status');
+    refs.boot.append(bootNote);
+  }
+  bootNote.textContent = message;
 }
 
 function closeDialogById(dialog) {
@@ -878,7 +940,7 @@ async function handleRegister(event) {
 
 async function enterApp() {
   const data = await api('/api/bootstrap');
-  applyBootstrap(data);
+  if (applyBootstrap(data) === false) return;
   showMain();
   const restored = await restoreActiveJob();
   if (!restored) await restorePendingJob();
@@ -910,9 +972,37 @@ async function handleLogout() {
 /* Account chrome                                                      */
 /* ------------------------------------------------------------------ */
 
+function reloadForNewShell(serverBuild) {
+  const next = Number(serverBuild);
+  if (!Number.isFinite(next) || next <= APP_BUILD) return false;
+
+  // Guard against a reload loop if the server keeps advertising a build this
+  // page cannot load (for example, a half-deployed release).
+  let alreadyReloaded = 0;
+  try {
+    alreadyReloaded = Number(sessionStorage.getItem('margin.shellReload') || 0);
+  } catch {
+    alreadyReloaded = 0;
+  }
+  if (alreadyReloaded === next) return false;
+
+  try {
+    sessionStorage.setItem('margin.shellReload', String(next));
+  } catch {
+    // The reload below still fetches the fresh bundle.
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set('v', String(next));
+  window.location.replace(url.toString());
+  return true;
+}
+
 function applyBootstrap(data) {
   if (data.app) {
     state.app = {
+      version: data.app.version || state.app.version,
+      shellVersion:
+        Number(data.app.shellVersion) || state.app.shellVersion,
       maxUploadMb: Number(data.app.maxUploadMb) || state.app.maxUploadMb,
       acceptedExtensions:
         Array.isArray(data.app.acceptedExtensions) &&
@@ -923,17 +1013,32 @@ function applyBootstrap(data) {
     };
   }
 
+  // A stale shell can mis-price a job. Reload before it can show a charge.
+  if (reloadForNewShell(data.app?.shellVersion)) return false;
+
   state.account = data.account ?? null;
   state.quota = data.quota ?? state.quota;
   state.paywall = data.paywall ?? null;
-  state.printerError = (data.printers ?? []).length
-    ? null
-    : 'No printer is connected right now.';
-  setPrinters(data.printers ?? [], data.defaultPrinterId ?? null);
+
+  const printers = Array.isArray(data.printers) ? data.printers : [];
+  if (printers.length) {
+    state.printerError = null;
+    setPrinters(printers, data.defaultPrinterId ?? null);
+  } else if (state.printers.length) {
+    // One failed enumeration is not proof the printer is gone. Keep the last
+    // good status until a later check says otherwise.
+    state.printerError = null;
+    renderPrinterChrome();
+  } else {
+    state.printerError = 'No printer is connected right now.';
+    setPrinters([], null);
+  }
+
   renderHistory(data.history ?? []);
   renderAccountChrome();
   updateUploadHints();
   updateConnectionLabel();
+  return true;
 }
 
 function setAccountMenu(open) {
@@ -1004,7 +1109,7 @@ async function refreshQuota() {
       state.account = data.account;
     }
     if (data.paywall) {
-      state.paywall = data.paywall;
+      state.paywall = { ...state.paywall, ...data.paywall };
     }
     if (data.account || data.paywall) {
       renderAccountChrome();
@@ -1312,6 +1417,30 @@ function selectPrinterById(id) {
     buildPrintControls();
     updatePrintSummary();
     renderSheetWarnings();
+  }
+}
+
+/**
+ * Waking a phone after the laptop slept should quietly restore the room:
+ * refresh the account/paywall and the printer, but keep the last known printer
+ * if the tunnel needs another moment.
+ */
+async function resumeFromSleep() {
+  try {
+    // Refresh the shell version before anything else: a phone left open
+    // through a deploy must not keep pricing out of an old bundle.
+    const auth = await api('/api/auth', { retries: 2 });
+    if (reloadForNewShell(auth.app?.shellVersion)) return;
+    await refreshQuota();
+    const data = await api('/api/printers');
+    const printers = Array.isArray(data.printers) ? data.printers : [];
+    if (printers.length) {
+      state.printerError = null;
+      setPrinters(printers, state.defaultPrinterId);
+      await loadHistory();
+    }
+  } catch {
+    // Keep the last good state. The next action will offer a retry.
   }
 }
 
@@ -3766,7 +3895,12 @@ function wireEvents() {
   window.addEventListener('online', () => {
     updateConnectionLabel();
     toast('Back online.');
-    if (!refs.main.hidden) void loadHistory();
+    state.startAttempts = 0;
+    if (!refs.main.hidden) {
+      void resumeFromSleep();
+    } else if (!refs.boot.classList.contains('is-done')) {
+      void start();
+    }
   });
   window.addEventListener('offline', () => {
     updateConnectionLabel();
@@ -3776,8 +3910,28 @@ function wireEvents() {
   });
 
   document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      state.hiddenAt = Date.now();
+      return;
+    }
+
+    // A phone can sit on an old bundle for days. Pick up a new shell as soon
+    // as it comes back to the foreground.
+    if (reloadForNewShell(state.app.shellVersion)) return;
+
+    const away = state.hiddenAt ? Date.now() - state.hiddenAt : 0;
+    state.hiddenAt = 0;
     if (
-      document.visibilityState === 'visible' &&
+      away > 15_000 &&
+      !refs.main.hidden &&
+      !state.uploading &&
+      !state.submittingPrint &&
+      !state.checkoutBusy
+    ) {
+      void resumeFromSleep();
+    }
+
+    if (
       state.statusJobId &&
       !state.statusTimer &&
       !state.statusFinished
@@ -3799,34 +3953,64 @@ function wireEvents() {
 /* ------------------------------------------------------------------ */
 
 async function start() {
-  wireEvents();
-  updateConnectionLabel();
-
+  if (state.starting) return;
+  state.starting = true;
   try {
-    const auth = await api('/api/auth');
-    state.app = {
-      maxUploadMb: Number(auth.app?.maxUploadMb) || state.app.maxUploadMb,
-      acceptedExtensions:
-        Array.isArray(auth.app?.acceptedExtensions) &&
-        auth.app.acceptedExtensions.length
-          ? auth.app.acceptedExtensions
-          : state.app.acceptedExtensions,
-      openSignup: Boolean(auth.app?.openSignup),
-    };
-    if (!auth.authenticated) {
-      showAuth();
-      return;
+    if (!state.started) {
+      wireEvents();
+      state.started = true;
     }
-    await enterApp();
-  } catch (error) {
-    showAuth(
-      error.network
-        ? 'The print room is not answering right now. Check your connection and try again.'
-        : describeError(error, 'The print room could not be opened.'),
-      { focus: false },
-    );
+    updateConnectionLabel();
+
+    try {
+      const auth = await api('/api/auth', { retries: 2 });
+      state.app = {
+        version: auth.app?.version || state.app.version,
+        shellVersion:
+          Number(auth.app?.shellVersion) || state.app.shellVersion,
+        maxUploadMb: Number(auth.app?.maxUploadMb) || state.app.maxUploadMb,
+        acceptedExtensions:
+          Array.isArray(auth.app?.acceptedExtensions) &&
+          auth.app.acceptedExtensions.length
+            ? auth.app.acceptedExtensions
+            : state.app.acceptedExtensions,
+        openSignup: Boolean(auth.app?.openSignup),
+      };
+      if (reloadForNewShell(auth.app?.shellVersion)) return;
+      if (!auth.authenticated) {
+        state.startAttempts = 0;
+        showAuth();
+        return;
+      }
+      await enterApp();
+      state.startAttempts = 0;
+    } catch (error) {
+      if (reloadForNewShell(state.app.shellVersion)) return;
+
+      // A sleeping laptop or a dropped quick tunnel is temporary. Stay on the
+      // boot screen and keep trying instead of dumping a signed-in user back to
+      // the sign-in form.
+      const retryable =
+        Boolean(error.network || error.offline) ||
+        Number(error.status) >= 500;
+      if (retryable && state.startAttempts < BOOT_RETRY_LIMIT) {
+        state.startAttempts += 1;
+        setBootNote('Trying to reach the print room…');
+        window.setTimeout(() => {
+          void start();
+        }, BOOT_RETRY_MS);
+        return;
+      }
+
+      showAuth(
+        retryable
+          ? 'The print room is not answering right now. Check your connection and try again.'
+          : describeError(error, 'The print room could not be opened.'),
+        { focus: false },
+      );
+    }
   } finally {
-    hideBoot();
+    state.starting = false;
   }
 }
 

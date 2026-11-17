@@ -209,37 +209,51 @@ export function createPrinterService(config) {
     );
 
     try {
-      await execFileAsync(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          path.join(config.scriptsDir, 'get-printers.ps1'),
-          '-OutputPath',
-          outputPath,
-        ],
-        {
-          timeout: 30_000,
-          windowsHide: true,
-          maxBuffer: 1024 * 1024,
-        },
-      );
+      let lastError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await execFileAsync(
+            'powershell.exe',
+            [
+              '-NoProfile',
+              '-NonInteractive',
+              '-ExecutionPolicy',
+              'Bypass',
+              '-File',
+              path.join(config.scriptsDir, 'get-printers.ps1'),
+              '-OutputPath',
+              outputPath,
+            ],
+            {
+              timeout: 30_000,
+              windowsHide: true,
+              maxBuffer: 1024 * 1024,
+            },
+          );
 
-      const raw = await fsp.readFile(outputPath, 'utf8');
-      const data = JSON.parse(raw);
-      if (!data?.ok) throw new Error(data?.error || 'Could not read printers.');
-      const printers = (data.printers ?? []).map(decoratePrinter);
+          const raw = await fsp.readFile(outputPath, 'utf8');
+          const data = JSON.parse(raw);
+          if (!data?.ok) throw new Error(data?.error || 'Could not read printers.');
+          const printers = (data.printers ?? []).map(decoratePrinter);
 
-      return {
-        ok: true,
-        printers,
-        defaultPrinter:
-          data.defaultPrinter ?? printers.find((printer) => printer.isDefault)?.name ?? null,
-        generatedAt: data.generatedAt,
-      };
+          return {
+            ok: true,
+            printers,
+            defaultPrinter:
+              data.defaultPrinter ?? printers.find((printer) => printer.isDefault)?.name ?? null,
+            generatedAt: data.generatedAt,
+          };
+        } catch (error) {
+          lastError = error;
+          await fsp.rm(outputPath, { force: true }).catch(() => {});
+          // The spooler occasionally returns a half-written file while waking
+          // from sleep. One quick retry avoids showing a false "offline".
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 600));
+          }
+        }
+      }
+      throw lastError;
     } finally {
       await fsp.rm(outputPath, { force: true }).catch(() => {});
     }
@@ -255,6 +269,18 @@ export function createPrinterService(config) {
       })
       .catch((error) => {
         console.error('[printer]', error.message);
+        const lastGood = cache?.ok ? cache : null;
+        if (lastGood) {
+          // Keep printing possible during a brief USB/ spooler hiccup. The
+          // print job itself is still verified by the Windows print path.
+          cache = {
+            ...lastGood,
+            stale: true,
+            staleSince: new Date().toISOString(),
+          };
+          cacheTime = Date.now();
+          return cache;
+        }
         cache = {
           ok: false,
           error: 'The printer could not be reached. Check that it is switched on and connected.',
