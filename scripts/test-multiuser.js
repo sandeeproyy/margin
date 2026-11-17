@@ -18,7 +18,6 @@ process.env.HOST = '127.0.0.1';
 process.env.MARGIN_ADMIN_EMAIL = 'admin@margin.test';
 process.env.MARGIN_ADMIN_NAME = 'Owner';
 process.env.MARGIN_ADMIN_PASSWORD = 'TestPassword123!';
-process.env.MARGIN_PRINT_PIN = '123456';
 process.env.MARGIN_PROXY_SECRET = '';
 process.env.MARGIN_PUBLIC_ORIGIN = '';
 process.env.MARGIN_PUBLIC_API_URL = '';
@@ -196,32 +195,11 @@ async function runTests() {
   }
   console.log('  ok');
 
-  console.log('[test] 5. PIN gate starts locked');
+  console.log('[test] 5. PIN gate is removed');
   const pinStatus = await request('/api/pin/status', {
     headers: { Cookie: adminCookie },
   });
-  assert.equal(pinStatus.status, 200);
-  assert.equal(pinStatus.json.verified, false);
-
-  const wrongPin = await request('/api/pin/verify', {
-    method: 'POST',
-    headers: { Cookie: adminCookie },
-    body: { pin: '000000' },
-  });
-  assert.equal(wrongPin.status, 403);
-
-  const goodPin = await request('/api/pin/verify', {
-    method: 'POST',
-    headers: { Cookie: adminCookie },
-    body: { pin: '123456' },
-  });
-  assert.equal(goodPin.status, 200);
-  assert.equal(goodPin.json.verified, true);
-
-  const pinStatusAfter = await request('/api/pin/status', {
-    headers: { Cookie: adminCookie },
-  });
-  assert.equal(pinStatusAfter.json.verified, true);
+  assert.equal(pinStatus.status, 404);
   console.log('  ok');
 
   console.log('[test] 6. Owner sees the full printer list only in the admin panel');
@@ -301,22 +279,17 @@ async function runTests() {
   );
   console.log('  ok');
 
-  console.log('[test] 8. Member isolation and PIN isolation');
+  console.log('[test] 8. Member isolation');
   const memberAdmin = await request('/api/admin/overview', {
     headers: { Cookie: aliceCookie },
   });
   assert.equal(memberAdmin.status, 403);
 
-  const memberPin = await request('/api/pin/status', {
-    headers: { Cookie: aliceCookie },
-  });
-  assert.equal(memberPin.json.verified, false);
-
   const memberBootstrap = await request('/api/bootstrap', {
     headers: { Cookie: aliceCookie },
   });
   assert.equal(memberBootstrap.status, 200);
-  assert.equal(memberBootstrap.json.pinVerified, false);
+  assert.equal(memberBootstrap.json.pinVerified, undefined);
   assert.equal(memberBootstrap.json.paywall.ownerExempt, undefined);
   assert.equal(memberBootstrap.json.paywall.freePageAvailable, undefined);
   assert.equal(memberBootstrap.json.paywall.pricePerPagePaise, 100);
@@ -414,7 +387,7 @@ async function runTests() {
   assert.deepEqual(bobBootstrap.json.history, []);
   console.log('  ok');
 
-  console.log('[test] 12. Printing is blocked until the PIN is entered');
+  console.log('[test] 12. Printing is blocked until payment is completed');
   const printAttempt = await request(`/api/jobs/${aliceJobId}/print`, {
     method: 'POST',
     headers: { Cookie: aliceCookie },
@@ -427,12 +400,12 @@ async function runTests() {
       pageRange: 'all',
     },
   });
-  assert.equal(printAttempt.status, 403);
-  assert.equal(printAttempt.json.code, 'PIN_REQUIRED');
+  assert.equal(printAttempt.status, 402);
+  assert.equal(printAttempt.json.code, 'PAYMENT_REQUIRED');
   console.log('  ok (nothing was sent to a printer)');
 
   console.log('\n==============================================');
-  console.log('ALL MULTI-USER, PRIVACY & PIN TESTS PASSED');
+  console.log('ALL MULTI-USER, PRIVACY & PAYMENT GATE TESTS PASSED');
   console.log('No physical print job was created.');
   console.log('==============================================\n');
 

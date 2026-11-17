@@ -78,22 +78,6 @@ const paymentLimiter = createSlidingLimiter({
   max: 30,
   message: 'You have started a lot of payments in the last hour. Try again a little later.',
 });
-const pinLimiter = createSlidingLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: config.pinAttemptsPerWindow,
-  message: 'Too many PIN attempts. Wait a few minutes, then try again.',
-});
-
-// Map of userId -> { verifiedAt: timestamp }
-const pinSessions = new Map();
-
-function isPinVerified(userId) {
-  const session = pinSessions.get(userId);
-  if (!session) return false;
-  const elapsed = Date.now() - session.verifiedAt;
-  return elapsed < config.printPinUnlockMinutes * 60 * 1000;
-}
-
 const uploadSessions = new Map();
 const prepareQueue = [];
 const PREPARE_CONCURRENCY = 2;
@@ -183,18 +167,6 @@ function printEstimate(job, rawRange, copies) {
  * can never be built from different rules.
  */
 async function evaluatePrintRequest(req, job) {
-  if (!isPinVerified(req.user.id)) {
-    return {
-      ok: false,
-      status: 403,
-      body: {
-        ok: false,
-        error: 'Enter the print room PIN before sending a job.',
-        code: 'PIN_REQUIRED',
-      },
-    };
-  }
-
   if (!config.isWindows) {
     return {
       ok: false,
@@ -667,7 +639,6 @@ app.get('/api/bootstrap', async (req, res, next) => {
       printerAvailable: printers.some((printer) => printer.online),
       history: recent,
       quota,
-      pinVerified: isPinVerified(req.user.id),
       paywall: paywallFor(),
     });
   } catch (error) {
@@ -1411,45 +1382,6 @@ app.get('/api/account', async (req, res, next) => {
 });
 
 app.post('/api/account/password', security.requireAppIntent, security.handleChangePassword);
-
-/* ------------------------------------------------------------------ */
-/* Print PIN gate                                                      */
-/* ------------------------------------------------------------------ */
-
-app.get('/api/pin/status', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.json({
-    ok: true,
-    verified: isPinVerified(req.user.id),
-    unlockMinutes: config.printPinUnlockMinutes,
-  });
-});
-
-app.post('/api/pin/verify', security.requireAppIntent, (req, res) => {
-  const pin = String(req.body?.pin ?? '').trim();
-  if (!pin) {
-    res.status(400).json({ ok: false, error: 'Enter the print PIN.' });
-    return;
-  }
-
-  const rate = pinLimiter.check(req.user.id);
-  if (!rate.ok) {
-    res.status(429).json({ ok: false, error: rate.message });
-    return;
-  }
-
-  if (!timingSafeEqualString(pin, config.printPin)) {
-    res.status(403).json({
-      ok: false,
-      error: 'That PIN is not correct. Ask the print room owner for the right one.',
-    });
-    return;
-  }
-
-  pinLimiter.reset(req.user.id);
-  pinSessions.set(req.user.id, { verifiedAt: Date.now() });
-  res.json({ ok: true, verified: true });
-});
 
 /* ------------------------------------------------------------------ */
 /* Administrator (accounts only, never other people's documents)       */

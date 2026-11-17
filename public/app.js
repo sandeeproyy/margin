@@ -153,12 +153,6 @@ for (const id of [
   'closePrinterDialog',
   'printerDetails',
   'refreshPrintersButton',
-  'pinDialog',
-  'closePinDialog',
-  'pinForm',
-  'pinInput',
-  'pinSubmitButton',
-  'pinError',
   'statusView',
   'statusEyebrow',
   'statusJobNumber',
@@ -257,7 +251,6 @@ const state = {
   statusFinished: false,
   closingSheet: null,
   toastTimer: null,
-  pinVerified: false,
   admin: { users: [], invites: [], limits: null, printers: [], selectedId: null },
   adminSecret: '',
   passwordBusy: false,
@@ -661,13 +654,11 @@ function showAuth(message = '', { focus = true } = {}) {
   state.job = null;
   state.pendingJobId = null;
   state.uploading = false;
-  state.pinVerified = false;
   closePrintDialog(true);
   closeDialogById(refs.previewDialog);
   closeDialogById(refs.accountDialog);
   closeDialogById(refs.adminDialog);
   closeDialogById(refs.printerDialog);
-  closeDialogById(refs.pinDialog);
   setUploading(false);
   setAccountMenu(false);
   refs.statusView.hidden = true;
@@ -903,7 +894,6 @@ function applyBootstrap(data) {
   state.account = data.account ?? null;
   state.quota = data.quota ?? state.quota;
   state.paywall = data.paywall ?? null;
-  state.pinVerified = Boolean(data.pinVerified);
   state.printerError = (data.printers ?? []).length
     ? null
     : 'No printer is connected right now.';
@@ -2528,9 +2518,6 @@ async function submitPrint(payment = null) {
     return;
   }
 
-  const pinOk = await ensurePinVerified();
-  if (!pinOk) return;
-
   const printer = getSelectedPrinter();
   if (!printer) {
     refs.sheetError.textContent =
@@ -2584,13 +2571,6 @@ async function submitPrint(payment = null) {
       showAuth('Please sign in again before sending the job.');
       return;
     }
-    if (error.data?.code === 'PIN_REQUIRED') {
-      state.pinVerified = false;
-      const retryPin = await openPinDialog();
-      if (retryPin) {
-        return submitPrint(payment);
-      }
-    }
     if (
       error.data?.code === 'PAYMENT_REQUIRED' ||
       error.data?.code === 'PAYMENT_IN_PROGRESS'
@@ -2616,81 +2596,6 @@ async function submitPrint(payment = null) {
       toast(error.message, { error: true, duration: 6000 });
     }
   }
-}
-
-/* ------------------------------------------------------------------ */
-/* Print PIN                                                           */
-/* ------------------------------------------------------------------ */
-
-let pinResolve = null;
-
-function openPinDialog() {
-  return new Promise((resolve) => {
-    pinResolve = resolve;
-    refs.pinInput.value = '';
-    refs.pinError.textContent = '';
-    if (!refs.pinDialog.open) refs.pinDialog.showModal();
-    updateBodyLock();
-    window.setTimeout(() => refs.pinInput.focus(), 50);
-  });
-}
-
-function closePinDialog(result = false) {
-  if (refs.pinDialog.open) refs.pinDialog.close();
-  updateBodyLock();
-  if (pinResolve) {
-    const resolve = pinResolve;
-    pinResolve = null;
-    resolve(result);
-  }
-}
-
-async function handlePinSubmit(event) {
-  event.preventDefault();
-  const pin = refs.pinInput.value.trim();
-  if (!pin) {
-    refs.pinError.textContent = 'Enter the PIN.';
-    refs.pinInput.focus();
-    return;
-  }
-
-  setBusyButton(refs.pinSubmitButton, true, 'Authorizing…', 'Authorize printing');
-  try {
-    await api('/api/pin/verify', {
-      method: 'POST',
-      body: { pin },
-    });
-    state.pinVerified = true;
-    toast('Printing authorized.');
-    closePinDialog(true);
-  } catch (error) {
-    if (isAuthenticatedError(error)) {
-      closePinDialog(false);
-      showAuth('Please sign in again.');
-      return;
-    }
-    refs.pinError.textContent = describeError(
-      error,
-      'That PIN could not be verified. Try again.',
-    );
-    refs.pinInput.select();
-  } finally {
-    setBusyButton(refs.pinSubmitButton, false, 'Authorizing…', 'Authorize printing');
-  }
-}
-
-async function ensurePinVerified() {
-  if (state.pinVerified) return true;
-  try {
-    const data = await api('/api/pin/status');
-    if (data.verified) {
-      state.pinVerified = true;
-      return true;
-    }
-  } catch {
-    // Dialog fallback
-  }
-  return openPinDialog();
 }
 
 /* ------------------------------------------------------------------ */
@@ -3701,15 +3606,6 @@ function wireEvents() {
   });
   refs.adminRefreshPrinters.addEventListener('click', () => {
     void loadAdminPrinters({ refresh: true });
-  });
-
-  refs.pinForm.addEventListener('submit', (event) => {
-    void handlePinSubmit(event);
-  });
-  refs.closePinDialog.addEventListener('click', () => closePinDialog(false));
-  wireDialogDismissal(refs.pinDialog, () => closePinDialog(false));
-  refs.pinInput.addEventListener('input', () => {
-    refs.pinError.textContent = '';
   });
 
   refs.refreshHistory.addEventListener('click', () => {

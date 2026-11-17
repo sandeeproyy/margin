@@ -73,7 +73,6 @@ Fill in at least:
 ```ini
 MARGIN_ADMIN_EMAIL=you@example.com
 MARGIN_ADMIN_PASSWORD=choose-a-strong-password
-MARGIN_PRINT_PIN=123456
 ```
 
 If you leave `MARGIN_ADMIN_PASSWORD` blank, Margin generates one and saves it
@@ -95,21 +94,6 @@ Members cannot open the owner panel, other members' jobs, or other members'
 history. The owner can disable an account or reset a temporary password without
 seeing that person's documents.
 
-## The print PIN
-
-The PIN is a second gate in front of paper, separate from signing in.
-
-- Set it with `MARGIN_PRINT_PIN` in `.env`, then restart the backend.
-- The example value is `123456`. Choose your own PIN and share it privately.
-- It is checked on the laptop, with rate limiting and a timing-safe comparison.
-- A correct PIN unlocks printing for that signed-in user for 30 minutes. Change
-  the window with `MARGIN_PIN_UNLOCK_MINUTES`.
-- Without an unlocked PIN, the print endpoint returns `PIN_REQUIRED` and no
-  page is sent.
-
-Share the PIN separately from the app address, and only with people you would
-let use the printer.
-
 ## Payments
 
 Margin uses Razorpay and charges per print job, with every page priced the same.
@@ -124,16 +108,20 @@ Margin uses Razorpay and charges per print job, with every page priced the same.
 
 To enable payments:
 
-1. Create Razorpay API keys (test keys start with `rzp_test_`).
-2. Put them in the laptop `.env`:
+1. Create Razorpay API keys. Test keys start with `rzp_test_`; live keys start
+   with `rzp_live_`. Live mode requires an activated Razorpay account, including
+   KYC and website review.
+2. Put the keys in the laptop `.env`:
 
    ```dotenv
-   RAZORPAY_KEY_ID=rzp_test_your_key_id
+   RAZORPAY_KEY_ID=your_key_id
    RAZORPAY_KEY_SECRET=your_key_secret
    ```
 
-3. Restart the backend. No Razorpay setting belongs in Vercel: orders are
-   created and verified on the laptop, never in the browser.
+   Use `rzp_live_...` keys for real payments. With `rzp_test_...` keys, Razorpay
+   Checkout shows **Test Mode** and no real money moves.
+3. Restart the backend. The deployed Vercel site uses this laptop backend, so
+   the live mode appears there after the restart.
 4. Keep Razorpay's payment-capture setting on **automatic**. The server also
    asks for automatic capture per order and captures an authorised payment if
    one arrives that way.

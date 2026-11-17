@@ -16,7 +16,7 @@
     "tray:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1",
     "startup:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-startup.ps1",
     "startup:uninstall": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall-startup.ps1",
-    "test": "node scripts/test-paywall.js && node scripts/test-multiuser-pin.js",
+    "test": "node scripts/test-paywall.js && node scripts/test-multiuser.js",
     "test:print": "node scripts/test-print.js"
   },
   "dependencies": {

@@ -288,7 +288,7 @@ async function makeTestPdf({ pdfPath, printer, paper, source, quality, copies })
     .fontSize(8.2)
     .fillColor('#44443a')
     .text(
-      'A print room in miniature. Margin runs on one laptop, keeps your files out of someone else\'s cloud, and hands the pages to the printer by your desk. A private PIN guards the door. The rest is paper, ink, and a small amount of patience.',
+      'A print room in miniature. Margin runs on one laptop, keeps your files out of someone else\'s cloud, and hands the pages to the printer by your desk. An invitation and a payment guard the door. The rest is paper, ink, and a small amount of patience.',
       62,
       textY,
       { width: paperWidth - 124, lineGap: 4.2 },

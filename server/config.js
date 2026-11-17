@@ -158,17 +158,6 @@ export async function loadConfig() {
     process.env.MARGIN_ADMIN_PASSWORD ?? '',
   ).trim();
   const generatedAdminPassword = adminPassword ? '' : generatedPassword();
-  const printPin = /^\d{4,12}$/.test(String(process.env.MARGIN_PRINT_PIN ?? '').trim())
-    ? String(process.env.MARGIN_PRINT_PIN).trim()
-    : '123456';
-  const printPinUnlockMinutes = parsePositiveInt(
-    process.env.MARGIN_PIN_UNLOCK_MINUTES,
-    30,
-  );
-  const pinAttemptsPerWindow = parsePositiveInt(
-    process.env.MARGIN_PIN_ATTEMPTS,
-    10,
-  );
   const razorpayKeyId = String(process.env.RAZORPAY_KEY_ID ?? '').trim();
   const razorpayKeySecret = String(
     process.env.RAZORPAY_KEY_SECRET ?? '',
@@ -226,11 +215,6 @@ export async function loadConfig() {
     maxActiveJobsGlobal: parsePositiveInt(process.env.MARGIN_MAX_JOBS, 6),
     uploadsPerHour: parsePositiveInt(process.env.MARGIN_UPLOADS_PER_HOUR, 30),
     printsPerHour: parsePositiveInt(process.env.MARGIN_PRINTS_PER_HOUR, 40),
-    // Shared print PIN. Every member types this before a page is sent to the
-    // printer, so a stray click or an unknown visitor cannot make paper move.
-    printPin,
-    printPinUnlockMinutes,
-    pinAttemptsPerWindow,
     // Payments run on this laptop, never in the browser. Only the public key
     // ID is ever sent to a client, and only after a paid order is requested.
     razorpayKeyId,

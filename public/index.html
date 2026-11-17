@@ -17,7 +17,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/fonts/instrument-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/styles.css?v=7">
+  <link rel="stylesheet" href="/styles.css?v=8">
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -661,31 +661,6 @@
     </div>
   </dialog>
 
-  <dialog id="pinDialog" class="pin-dialog" aria-labelledby="pinDialogHeading">
-    <div class="pin-dialog-inner">
-      <header class="mini-dialog-head">
-        <div>
-          <p class="eyebrow"><span>Print room</span></p>
-          <h2 id="pinDialogHeading">Enter the PIN.</h2>
-        </div>
-        <button id="closePinDialog" class="icon-button" type="button" aria-label="Close PIN entry">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
-        </button>
-      </header>
-      <p class="pin-lede">The print room owner shared a print PIN with you. Enter it here to authorize printing.</p>
-      <form id="pinForm" class="pin-form" novalidate>
-        <label class="field-label" for="pinInput">Print PIN</label>
-        <input id="pinInput" class="text-input text-input--pin" type="text" inputmode="numeric" maxlength="12" placeholder="e.g. 123456" autocomplete="off" aria-describedby="pinError" required>
-        <button id="pinSubmitButton" class="button button--ink button--wide" type="submit">
-          <span>Authorize printing</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"></path></svg>
-        </button>
-        <p id="pinError" class="form-error" role="alert"></p>
-      </form>
-      <p class="mini-dialog-note">Authorized for this session. You will not need to re-enter it for every page.</p>
-    </div>
-  </dialog>
-
   <section id="statusView" class="status-view" hidden aria-live="polite">
     <div class="status-inner">
       <header class="status-head">
@@ -779,6 +754,6 @@
     <div class="noscript">Margin needs JavaScript to send pages to the printer.</div>
   </noscript>
 
-  <script src="/app.js?v=7" type="module"></script>
+  <script src="/app.js?v=8" type="module"></script>
 </body>
 </html>
