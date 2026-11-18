@@ -31,6 +31,36 @@ function Write-SyncLog {
     }
 }
 
+# Startup and the tray watchdog can both notice a stale tunnel at the same
+# time. Only one sync may update Vercel, or the two deploys race and can leave
+# production pointing at a dead address.
+try {
+    $script:SyncMutex = New-Object System.Threading.Mutex($false, "Local\MarginTunnelSync")
+    $acquired = $false
+    try {
+        $acquired = $script:SyncMutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $acquired = $true
+    }
+    if (-not $acquired) {
+        Write-SyncLog "Another tunnel sync is already running. Leaving it to finish."
+        exit 0
+    }
+} catch {
+    Write-SyncLog "Could not create the sync lock: $_"
+}
+
+# Prefer the pinned local Vercel CLI. Falling back to npx used to reinstall the
+# CLI on the recovery path, which could take minutes while the room was down.
+$localVercel = Join-Path $RootDir "node_modules\.bin\vercel.cmd"
+if (Test-Path $localVercel) {
+    $vercelCommand = $localVercel
+    $vercelPrefix = @()
+} else {
+    $vercelCommand = "npx.cmd"
+    $vercelPrefix = @('--yes', 'vercel@66.0.0')
+}
+
 # Only accept a tunnel URL written after this run started, so a stale URL
 # from a previous tunnel can never be published.
 $started = [DateTime]::UtcNow.AddSeconds(-5)
@@ -134,7 +164,7 @@ $previousErrorAction = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
     Write-SyncLog "Updating the Vercel production tunnel variable."
-    $envOutput = & npx.cmd vercel env add MARGIN_TUNNEL_URL --environment production --value $url --force --yes 2>&1
+    $envOutput = & $vercelCommand @vercelPrefix env add MARGIN_TUNNEL_URL --environment production --value $url --force --yes 2>&1
     $envCode = $LASTEXITCODE
     Write-SyncLog ($envOutput -join ' ')
     if ($envCode -ne 0) {
@@ -143,7 +173,7 @@ try {
     }
 
     Write-SyncLog "Deploying production with the new tunnel."
-    $deployOutput = & npx.cmd vercel --prod --yes 2>&1
+    $deployOutput = & $vercelCommand @vercelPrefix --prod --yes 2>&1
     $deployCode = $LASTEXITCODE
     Write-SyncLog ($deployOutput -join ' ')
     if ($deployCode -ne 0) {
